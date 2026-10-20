@@ -6,7 +6,7 @@ export default function Hero() {
           {/* Etiqueta superior */}
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-slate-900 border border-slate-800 text-blue-400 text-xs font-semibold uppercase tracking-wider mb-6">
             <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-            Consultoría & Soluciones Digitales
+            Consultoría & Soluciones Pueba de sincronización
           </div>
 
           {/* Título de alto impacto */}
