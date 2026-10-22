@@ -1,20 +1,34 @@
+const ANIO_ACTUAL = new Date().getFullYear();
+
 export default function Footer() {
   return (
-    <footer className="bg-slate-950 border-t border-slate-800/80 py-10 text-white text-xs">
+    <footer className="bg-white border-t border-slate-200 py-10 text-slate-700 text-xs">
       <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
         <div>
-          <span className="font-bold text-sm tracking-tight text-white">
-            LHBO<span className="text-blue-500">.</span> Sistemas
+          <span className="font-black text-base tracking-tight text-slate-900">
+            LHBO<span className="text-blue-600">.</span> Sistemas
           </span>
-          <p className="text-slate-400 mt-1">
+          <p className="text-slate-500 mt-1">
             Consultoría y desarrollo computarizado con más de 50 años de trayectoria.
           </p>
         </div>
 
         <div className="text-slate-500 text-center sm:text-right">
-          © {new Date().getFullYear()} LHBO Sistemas. Todos los derechos reservados.
+          © {ANIO_ACTUAL} LHBO Sistemas. Todos los derechos reservados.
         </div>
       </div>
+
+      {/* Botón flotante de WhatsApp permanente */}
+      <a
+        href="https://wa.me/584243008608?text=Hola%2C%20quisiera%20consultar%20sobre%20un%20proyecto%20web%20o%20un%20sistema%20personalizado."
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Contactar por WhatsApp"
+        className="fixed bottom-6 right-6 z-50 inline-flex items-center gap-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm px-4 py-3 rounded-full shadow-xl shadow-emerald-600/30 hover:scale-105 transition-all"
+      >
+        <span className="text-base">💬</span>
+        <span className="hidden sm:inline">¿Consultas? WhatsApp</span>
+      </a>
     </footer>
   );
 }
