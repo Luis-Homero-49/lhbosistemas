@@ -2,6 +2,7 @@ import { useState } from "react";
 
 const WHATSAPP_NUMERO = "584243008608";
 const CORREO_CONTACTO = "lhbosistemas@gmail.com";
+const API_BASE = import.meta.env.VITE_API_URL || "";
 
 export default function Contacto() {
   const [formulario, setFormulario] = useState({
@@ -12,9 +13,18 @@ export default function Contacto() {
     mensaje: "",
   });
 
+  const [estadoCorreo, setEstadoCorreo] = useState({
+    enviando: false,
+    exito: false,
+    error: "",
+  });
+
   const manejarCambio = (e) => {
     const { name, value } = e.target;
     setFormulario((prev) => ({ ...prev, [name]: value }));
+    if (estadoCorreo.exito || estadoCorreo.error) {
+      setEstadoCorreo({ enviando: false, exito: false, error: "" });
+    }
   };
 
   const construirTextoConsulta = () => {
@@ -35,12 +45,58 @@ export default function Contacto() {
     window.open(`https://wa.me/${WHATSAPP_NUMERO}?text=${texto}`, "_blank", "noopener,noreferrer");
   };
 
-  const enviarPorCorreo = () => {
+  const abrirClienteCorreoManual = () => {
     const asunto = encodeURIComponent(
       `Consulta Web - ${formulario.nombre || "Nuevo Proyecto"} (${formulario.rubro})`
     );
     const cuerpo = encodeURIComponent(construirTextoConsulta());
     window.location.href = `mailto:${CORREO_CONTACTO}?subject=${asunto}&body=${cuerpo}`;
+  };
+
+  const enviarPorCorreo = async () => {
+    if (!formulario.nombre.trim() || !formulario.mensaje.trim()) {
+      setEstadoCorreo({
+        enviando: false,
+        exito: false,
+        error: "Por favor ingrese su nombre y los detalles de su requerimiento antes de enviar.",
+      });
+      return;
+    }
+
+    setEstadoCorreo({ enviando: true, exito: false, error: "" });
+
+    try {
+      const res = await fetch(`${API_BASE}/api/contacto`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formulario),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok || !data.ok) {
+        throw new Error(
+          data.error || "No se pudo enviar el correo directamente desde el servidor."
+        );
+      }
+
+      setEstadoCorreo({ enviando: false, exito: true, error: "" });
+      setFormulario({
+        nombre: "",
+        empresa: "",
+        rubro: "Página Web / Catálogo Comercial",
+        contactoCliente: "",
+        mensaje: "",
+      });
+    } catch (err) {
+      setEstadoCorreo({
+        enviando: false,
+        exito: false,
+        error:
+          err.message ||
+          "Hubo un inconveniente al enviar el correo. Puede usar WhatsApp o abrir su cliente de correo.",
+      });
+    }
   };
 
   return (
@@ -227,6 +283,32 @@ export default function Contacto() {
                 ></textarea>
               </div>
 
+              {/* Avisos de estado de envío por Resend */}
+              {estadoCorreo.exito && (
+                <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-medium flex items-start gap-2.5">
+                  <span>✅</span>
+                  <div>
+                    <p className="font-bold">¡Su mensaje fue enviado con éxito!</p>
+                    <p className="text-emerald-700 mt-0.5">
+                      Hemos recibido su solicitud en nuestro correo y nos comunicaremos con usted a la brevedad.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {estadoCorreo.error && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-2">
+                  <p className="font-semibold">⚠️ {estadoCorreo.error}</p>
+                  <button
+                    type="button"
+                    onClick={abrirClienteCorreoManual}
+                    className="underline font-bold text-blue-700 hover:text-blue-900 cursor-pointer"
+                  >
+                    Abrir mi aplicación de correo manualmente →
+                  </button>
+                </div>
+              )}
+
               {/* Botones de envío duales */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
                 <button
@@ -239,11 +321,14 @@ export default function Contacto() {
 
                 <button
                   type="button"
+                  disabled={estadoCorreo.enviando}
                   onClick={enviarPorCorreo}
-                  className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-3.5 px-5 rounded-xl transition-all shadow-md shadow-blue-600/20 text-sm flex items-center justify-center gap-2 cursor-pointer"
+                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white font-semibold py-3.5 px-5 rounded-xl transition-all shadow-md shadow-blue-600/20 text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-wait"
                 >
                   <span>✉️</span>
-                  <span>Enviar por Correo</span>
+                  <span>
+                    {estadoCorreo.enviando ? "Enviando correo..." : "Enviar por Correo"}
+                  </span>
                 </button>
               </div>
             </form>
