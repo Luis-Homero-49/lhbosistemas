@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 const WHATSAPP_NUMERO = "584243008608";
-const CORREO_CONTACTO = "lhbosistemas@gmail.com";
+const CORREO_CONTACTO = "luishomerobo@gmail.com";
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
 export default function Contacto() {

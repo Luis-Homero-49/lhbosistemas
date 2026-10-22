@@ -101,7 +101,7 @@ async function manejarEnvioContacto(req, res) {
     const toEmail = (
       process.env.RESEND_TO_EMAIL ||
       process.env.resend_to_email ||
-      "lhbosistemas@gmail.com"
+      "luishomerobo@gmail.com"
     ).trim();
 
     if (!apiKey) {
