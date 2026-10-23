@@ -64,21 +64,37 @@ function responderJson(res, status, payload) {
   res.end(JSON.stringify(payload));
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 async function manejarEnvioContacto(req, res) {
   try {
     const body = await leerCuerpoJson(req);
     const {
       nombre = "",
+      correo = "",
+      telefono = "",
       empresa = "",
       rubro = "No especificado",
       contactoCliente = "",
       mensaje = "",
     } = body;
 
-    if (!nombre.trim() || !mensaje.trim()) {
+    const correoLimpio = (correo || contactoCliente || "").trim();
+    const telefonoLimpio = telefono.trim();
+
+    if (!nombre.trim() || !correoLimpio || !mensaje.trim()) {
       return responderJson(res, 400, {
         ok: false,
-        error: "Por favor complete al menos su nombre y los detalles del proyecto.",
+        error:
+          "Por favor complete su nombre, su correo electrónico y los detalles del requerimiento.",
+      });
+    }
+
+    if (!EMAIL_REGEX.test(correoLimpio)) {
+      return responderJson(res, 400, {
+        ok: false,
+        error:
+          "Por favor ingrese un correo electrónico válido para enviarle la confirmación de su requerimiento.",
       });
     }
 
@@ -96,7 +112,7 @@ async function manejarEnvioContacto(req, res) {
 
     const fromEmail = rawFrom.includes("<")
       ? rawFrom
-      : `LHBO Sistemas Web <${rawFrom}>`;
+      : `LHBO Sistemas <${rawFrom}>`;
 
     const toEmail = (
       process.env.RESEND_TO_EMAIL ||
@@ -112,21 +128,22 @@ async function manejarEnvioContacto(req, res) {
       });
     }
 
-    const asunto = `Nueva Consulta Web: ${nombre.trim()} (${rubro.trim()})`;
+    const asuntoInterno = `Nueva Consulta Web: ${nombre.trim()} (${rubro.trim()})`;
 
-    const textoPlano = [
+    const textoPlanoInterno = [
       "Nueva consulta recibida desde la página web de LHBO Sistemas",
       "------------------------------------------------------------",
       `Nombre: ${nombre.trim()}`,
+      `Correo del cliente: ${correoLimpio}`,
+      `Teléfono / WhatsApp: ${telefonoLimpio || "No especificado"}`,
       `Empresa / Negocio: ${empresa.trim() || "No especificada"}`,
       `Tipo de solución: ${rubro.trim()}`,
-      `Teléfono / Correo del cliente: ${contactoCliente.trim() || "No especificado"}`,
       "",
       "Detalles del requerimiento:",
       mensaje.trim(),
     ].join("\n");
 
-    const html = `
+    const htmlInterno = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
         <div style="background: #1d4ed8; color: #ffffff; padding: 20px 24px;">
           <h2 style="margin: 0; font-size: 18px;">Nueva Consulta desde LHBO Sistemas</h2>
@@ -139,16 +156,20 @@ async function manejarEnvioContacto(req, res) {
               <td style="padding: 8px 0; color: #0f172a;">${escaparHtml(nombre.trim())}</td>
             </tr>
             <tr>
+              <td style="padding: 8px 0; color: #64748b;"><strong>Correo electrónico:</strong></td>
+              <td style="padding: 8px 0; color: #0f172a; font-weight: bold;">${escaparHtml(correoLimpio)}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; color: #64748b;"><strong>Teléfono / WhatsApp:</strong></td>
+              <td style="padding: 8px 0; color: #0f172a;">${escaparHtml(telefonoLimpio || "No especificado")}</td>
+            </tr>
+            <tr>
               <td style="padding: 8px 0; color: #64748b;"><strong>Empresa / Negocio:</strong></td>
               <td style="padding: 8px 0; color: #0f172a;">${escaparHtml(empresa.trim() || "No especificada")}</td>
             </tr>
             <tr>
               <td style="padding: 8px 0; color: #64748b;"><strong>Rama / Solución:</strong></td>
               <td style="padding: 8px 0; color: #1d4ed8; font-weight: bold;">${escaparHtml(rubro.trim())}</td>
-            </tr>
-            <tr>
-              <td style="padding: 8px 0; color: #64748b;"><strong>Contacto del cliente:</strong></td>
-              <td style="padding: 8px 0; color: #0f172a; font-weight: bold;">${escaparHtml(contactoCliente.trim() || "No especificado")}</td>
             </tr>
           </table>
 
@@ -162,19 +183,14 @@ async function manejarEnvioContacto(req, res) {
       </div>
     `;
 
-    const payloadResend = {
+    const payloadInterno = {
       from: fromEmail,
       to: [toEmail],
-      subject: asunto,
-      text: textoPlano,
-      html,
+      reply_to: correoLimpio,
+      subject: asuntoInterno,
+      text: textoPlanoInterno,
+      html: htmlInterno,
     };
-
-    // Si el cliente ingresó un correo válido en el campo de contacto, lo asignamos a reply_to
-    const posibleCorreo = contactoCliente.trim();
-    if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(posibleCorreo)) {
-      payloadResend.reply_to = posibleCorreo;
-    }
 
     const respuestaResend = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -182,13 +198,13 @@ async function manejarEnvioContacto(req, res) {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify(payloadResend),
+      body: JSON.stringify(payloadInterno),
     });
 
     const dataResend = await respuestaResend.json().catch(() => ({}));
 
     if (!respuestaResend.ok) {
-      console.error("Error devuelto por Resend:", dataResend);
+      console.error("Error devuelto por Resend al enviar notificación interna:", dataResend);
       return responderJson(res, respuestaResend.status || 502, {
         ok: false,
         error:
@@ -197,9 +213,111 @@ async function manejarEnvioContacto(req, res) {
       });
     }
 
+    // Enviar correo automático de confirmación al potencial cliente
+    const asuntoConfirmacion = "Hemos recibido su requerimiento — LHBO Sistemas";
+
+    const textoConfirmacion = [
+      `Hola ${nombre.trim()},`,
+      "",
+      "Hemos recibido correctamente su requerimiento a través de la página web de LHBO Sistemas.",
+      "",
+      "Tiempo estimado de respuesta:",
+      "Un analista revisará los detalles de su solicitud y le responderá en las próximas 2 a 4 horas hábiles (con un plazo máximo de 24 horas).",
+      "",
+      "Resumen de su solicitud:",
+      `- Tipo de solución: ${rubro.trim()}`,
+      empresa.trim() ? `- Empresa / Negocio: ${empresa.trim()}` : null,
+      `- Detalles enviados: ${mensaje.trim()}`,
+      "",
+      "Si desea agregar algún detalle urgente, puede responder directamente a este correo o escribirnos por WhatsApp al +58 424-3008608.",
+      "",
+      "Atentamente,",
+      "Equipo de LHBO Sistemas",
+    ]
+      .filter((linea) => linea !== null)
+      .join("\n");
+
+    const htmlConfirmacion = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #0f172a; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;">
+        <div style="background: #1d4ed8; color: #ffffff; padding: 22px 24px;">
+          <h2 style="margin: 0; font-size: 18px;">¡Hemos recibido su requerimiento!</h2>
+          <p style="margin: 4px 0 0; font-size: 13px; color: #dbeafe;">Confirmación de recepción — LHBO Sistemas</p>
+        </div>
+        <div style="padding: 24px; background: #ffffff; font-size: 14px; line-height: 1.6;">
+          <p style="margin: 0 0 12px;">Hola <strong>${escaparHtml(nombre.trim())}</strong>,</p>
+          <p style="margin: 0 0 16px; color: #334155;">
+            Gracias por contactar a <strong>LHBO Sistemas</strong>. Confirmamos que hemos recibido los detalles de su proyecto y ya se encuentran en revisión.
+          </p>
+
+          <div style="padding: 14px 16px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; margin-bottom: 20px;">
+            <p style="margin: 0; color: #1e3a8a; font-size: 13px;">
+              ⏱️ <strong>Tiempo estimado de respuesta:</strong> Nuestro equipo analizará su requerimiento y se pondrá en contacto con usted en las próximas <strong>2 a 4 horas hábiles</strong> (máximo 24 horas).
+            </p>
+          </div>
+
+          <div style="padding: 16px; background: #f8fafc; border-left: 4px solid #2563eb; border-radius: 6px; margin-bottom: 20px;">
+            <p style="margin: 0 0 8px; font-size: 12px; text-transform: uppercase; color: #475569; font-weight: bold;">
+              Resumen de su requerimiento recibido:
+            </p>
+            <p style="margin: 0 0 6px; font-size: 13px; color: #334155;">
+              <strong>Solución de interés:</strong> ${escaparHtml(rubro.trim())}
+            </p>
+            ${
+              empresa.trim()
+                ? `<p style="margin: 0 0 6px; font-size: 13px; color: #334155;"><strong>Empresa / Negocio:</strong> ${escaparHtml(empresa.trim())}</p>`
+                : ""
+            }
+            <p style="margin: 8px 0 0; font-size: 13px; color: #1e293b; white-space: pre-wrap;">${escaparHtml(mensaje.trim())}</p>
+          </div>
+
+          <p style="margin: 0 0 12px; font-size: 13px; color: #475569;">
+            Si desea complementar su solicitud o requiere atención inmediata, puede responder directamente a este correo o escribirnos por WhatsApp al <strong>+58 424-3008608</strong>.
+          </p>
+
+          <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 20px 0;" />
+          <p style="margin: 0; font-size: 12px; color: #64748b;">
+            Atentamente,<br />
+            <strong>LHBO Sistemas</strong> — Desarrollo de Software y Soluciones Web a la Medida
+          </p>
+        </div>
+      </div>
+    `;
+
+    let confirmacionEnviada = false;
+    try {
+      const respConfirmacion = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: [correoLimpio],
+          reply_to: toEmail,
+          subject: asuntoConfirmacion,
+          text: textoConfirmacion,
+          html: htmlConfirmacion,
+        }),
+      });
+
+      if (respConfirmacion.ok) {
+        confirmacionEnviada = true;
+      } else {
+        const errConfirmacion = await respConfirmacion.json().catch(() => ({}));
+        console.warn(
+          "No se pudo entregar el correo de confirmación al cliente (verifique que RESEND_FROM_EMAIL pertenezca a un dominio verificado en Resend):",
+          errConfirmacion
+        );
+      }
+    } catch (errConf) {
+      console.warn("Error enviando confirmación al cliente:", errConf);
+    }
+
     return responderJson(res, 200, {
       ok: true,
       id: dataResend.id,
+      confirmacionEnviada,
     });
   } catch (error) {
     console.error("Error procesando /api/contacto:", error);

@@ -3,19 +3,22 @@ import { useState } from "react";
 const WHATSAPP_NUMERO = "584243008608";
 const CORREO_CONTACTO = "luishomerobo@gmail.com";
 const API_BASE = import.meta.env.VITE_API_URL || "";
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export default function Contacto() {
   const [formulario, setFormulario] = useState({
     nombre: "",
+    correo: "",
+    telefono: "",
     empresa: "",
     rubro: "Página Web / Catálogo Comercial",
-    contactoCliente: "",
     mensaje: "",
   });
 
   const [estadoCorreo, setEstadoCorreo] = useState({
     enviando: false,
     exito: false,
+    correoConfirmado: "",
     error: "",
   });
 
@@ -23,7 +26,7 @@ export default function Contacto() {
     const { name, value } = e.target;
     setFormulario((prev) => ({ ...prev, [name]: value }));
     if (estadoCorreo.exito || estadoCorreo.error) {
-      setEstadoCorreo({ enviando: false, exito: false, error: "" });
+      setEstadoCorreo({ enviando: false, exito: false, correoConfirmado: "", error: "" });
     }
   };
 
@@ -31,9 +34,10 @@ export default function Contacto() {
     const lineas = [
       "Hola, le escribo desde la página web de LHBO Sistemas.",
       formulario.nombre ? `• Nombre: ${formulario.nombre}` : null,
+      formulario.correo ? `• Correo electrónico: ${formulario.correo}` : null,
+      formulario.telefono ? `• Teléfono / WhatsApp: ${formulario.telefono}` : null,
       formulario.empresa ? `• Empresa/Negocio: ${formulario.empresa}` : null,
       formulario.rubro ? `• Tipo de proyecto: ${formulario.rubro}` : null,
-      formulario.contactoCliente ? `• Mi teléfono/correo: ${formulario.contactoCliente}` : null,
       formulario.mensaje ? `• Detalles: ${formulario.mensaje}` : null,
     ].filter(Boolean);
     return lineas.join("\n");
@@ -41,6 +45,15 @@ export default function Contacto() {
 
   const enviarPorWhatsApp = (e) => {
     e.preventDefault();
+    if (!EMAIL_REGEX.test(formulario.correo.trim())) {
+      setEstadoCorreo({
+        enviando: false,
+        exito: false,
+        correoConfirmado: "",
+        error: "Por favor ingrese un correo electrónico válido antes de enviar su requerimiento.",
+      });
+      return;
+    }
     const texto = encodeURIComponent(construirTextoConsulta());
     window.open(`https://wa.me/${WHATSAPP_NUMERO}?text=${texto}`, "_blank", "noopener,noreferrer");
   };
@@ -54,16 +67,31 @@ export default function Contacto() {
   };
 
   const enviarPorCorreo = async () => {
-    if (!formulario.nombre.trim() || !formulario.mensaje.trim()) {
+    const correoLimpio = formulario.correo.trim();
+
+    if (!formulario.nombre.trim() || !correoLimpio || !formulario.mensaje.trim()) {
       setEstadoCorreo({
         enviando: false,
         exito: false,
-        error: "Por favor ingrese su nombre y los detalles de su requerimiento antes de enviar.",
+        correoConfirmado: "",
+        error:
+          "Por favor complete su nombre, su correo electrónico obligatorio y los detalles de su requerimiento.",
       });
       return;
     }
 
-    setEstadoCorreo({ enviando: true, exito: false, error: "" });
+    if (!EMAIL_REGEX.test(correoLimpio)) {
+      setEstadoCorreo({
+        enviando: false,
+        exito: false,
+        correoConfirmado: "",
+        error:
+          "Por favor ingrese una dirección de correo electrónico válida para poder enviarle la confirmación.",
+      });
+      return;
+    }
+
+    setEstadoCorreo({ enviando: true, exito: false, correoConfirmado: "", error: "" });
 
     try {
       const res = await fetch(`${API_BASE}/api/contacto`, {
@@ -80,18 +108,25 @@ export default function Contacto() {
         );
       }
 
-      setEstadoCorreo({ enviando: false, exito: true, error: "" });
+      setEstadoCorreo({
+        enviando: false,
+        exito: true,
+        correoConfirmado: correoLimpio,
+        error: "",
+      });
       setFormulario({
         nombre: "",
+        correo: "",
+        telefono: "",
         empresa: "",
         rubro: "Página Web / Catálogo Comercial",
-        contactoCliente: "",
         mensaje: "",
       });
     } catch (err) {
       setEstadoCorreo({
         enviando: false,
         exito: false,
+        correoConfirmado: "",
         error:
           err.message ||
           "Hubo un inconveniente al enviar el correo. Puede usar WhatsApp o abrir su cliente de correo.",
@@ -197,14 +232,14 @@ export default function Contacto() {
               Cuéntenos sobre su idea o requerimiento
             </h3>
             <p className="text-xs text-slate-500 mb-6">
-              Complete los datos y envíelos con un clic por WhatsApp o Correo Electrónico.
+              Complete los datos para recibir una confirmación inmediata en su correo y una respuesta personalizada en las próximas <strong>2 a 4 horas hábiles</strong>.
             </p>
 
             <form className="space-y-4" onSubmit={enviarPorWhatsApp}>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Su Nombre
+                    Su Nombre <span className="text-red-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -219,6 +254,23 @@ export default function Contacto() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Su Correo Electrónico <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="email"
+                    name="correo"
+                    value={formulario.correo}
+                    onChange={manejarCambio}
+                    placeholder="Ej. cliente@empresa.com"
+                    required
+                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 transition-colors"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                     Empresa o Negocio
                   </label>
                   <input
@@ -230,39 +282,17 @@ export default function Contacto() {
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 transition-colors"
                   />
                 </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Rama o Tipo de Solución
-                  </label>
-                  <select
-                    name="rubro"
-                    value={formulario.rubro}
-                    onChange={manejarCambio}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:bg-white focus:border-blue-600 transition-colors"
-                  >
-                    <option value="Página Web / Catálogo Comercial">Comercio / Catálogo en Línea</option>
-                    <option value="Clínica / Consultorio Médico">Salud / Consultorio / Laboratorio</option>
-                    <option value="Distribuidora / Inventario y Precios">Distribuidora / Ferretería / Stock</option>
-                    <option value="Restaurante / Menú Digital">Restaurante / Gastronomía</option>
-                    <option value="Firma Profesional / Consultora">Bufete / Contadores / Consultora</option>
-                    <option value="Inmobiliaria / Constructora">Inmobiliaria / Servicios Técnicos</option>
-                    <option value="Sistema a Medida">Otro Sistema a la Medida</option>
-                  </select>
-                </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Su Teléfono o Correo
+                    Teléfono / WhatsApp (Opcional)
                   </label>
                   <input
-                    type="text"
-                    name="contactoCliente"
-                    value={formulario.contactoCliente}
+                    type="tel"
+                    name="telefono"
+                    value={formulario.telefono}
                     onChange={manejarCambio}
-                    placeholder="Ej. 0414-0000000 o correo@..."
+                    placeholder="Ej. 0414-0000000"
                     className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 transition-colors"
                   />
                 </div>
@@ -270,7 +300,27 @@ export default function Contacto() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Detalles de su necesidad o proyecto
+                  Rama o Tipo de Solución
+                </label>
+                <select
+                  name="rubro"
+                  value={formulario.rubro}
+                  onChange={manejarCambio}
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:bg-white focus:border-blue-600 transition-colors"
+                >
+                  <option value="Página Web / Catálogo Comercial">Comercio / Catálogo en Línea</option>
+                  <option value="Clínica / Consultorio Médico">Salud / Consultorio / Laboratorio</option>
+                  <option value="Distribuidora / Inventario y Precios">Distribuidora / Ferretería / Stock</option>
+                  <option value="Restaurante / Menú Digital">Restaurante / Gastronomía</option>
+                  <option value="Firma Profesional / Consultora">Bufete / Contadores / Consultora</option>
+                  <option value="Inmobiliaria / Constructora">Inmobiliaria / Servicios Técnicos</option>
+                  <option value="Sistema a Medida">Otro Sistema a la Medida</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Detalles de su necesidad o proyecto <span className="text-red-500">*</span>
                 </label>
                 <textarea
                   rows="4"
@@ -288,9 +338,11 @@ export default function Contacto() {
                 <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-medium flex items-start gap-2.5">
                   <span>✅</span>
                   <div>
-                    <p className="font-bold">¡Su mensaje fue enviado con éxito!</p>
-                    <p className="text-emerald-700 mt-0.5">
-                      Hemos recibido su solicitud en nuestro correo y nos comunicaremos con usted a la brevedad.
+                    <p className="font-bold">¡Su requerimiento fue recibido con éxito!</p>
+                    <p className="text-emerald-700 mt-0.5 leading-relaxed">
+                      Hemos enviado la confirmación de recepción a{" "}
+                      <strong>{estadoCorreo.correoConfirmado}</strong>. Nuestro equipo analizará su solicitud y le responderá en las próximas{" "}
+                      <strong>2 a 4 horas hábiles</strong> (plazo máximo de 24 horas).
                     </p>
                   </div>
                 </div>
