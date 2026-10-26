@@ -398,6 +398,11 @@ export async function actualizarEstadoRequerimiento(id, payload = {}) {
 }
 
 let ultimaSincronizacionResend = 0;
+let ultimoEstadoSyncResend = null;
+
+function esperarMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 /**
  * Sincroniza automáticamente en la Bandeja de Requerimientos los correos de
@@ -412,11 +417,18 @@ export async function sincronizarRequerimientosDesdeResend(forzar = false) {
     ""
   ).trim();
 
-  if (!apiKey) return { sincronizados: 0 };
+  if (!apiKey) {
+    ultimoEstadoSyncResend = { ok: false, motivo: "sin_api_key" };
+    return ultimoEstadoSyncResend;
+  }
 
   const ahoraMs = Date.now();
-  if (!forzar && ahoraMs - ultimaSincronizacionResend < 30000) {
-    return { sincronizados: 0 };
+  if (
+    !forzar &&
+    ultimoEstadoSyncResend &&
+    ahoraMs - ultimaSincronizacionResend < 30000
+  ) {
+    return ultimoEstadoSyncResend;
   }
   ultimaSincronizacionResend = ahoraMs;
 
@@ -429,8 +441,16 @@ export async function sincronizarRequerimientosDesdeResend(forzar = false) {
       },
     });
 
-    if (!listResp.ok) return { sincronizados: 0 };
     const listData = await listResp.json().catch(() => ({}));
+    if (!listResp.ok) {
+      ultimoEstadoSyncResend = {
+        ok: false,
+        status: listResp.status,
+        error: listData?.message || listData?.name || "Error al listar correos en Resend",
+      };
+      return ultimoEstadoSyncResend;
+    }
+
     const listaCorreos = Array.isArray(listData?.data) ? listData.data : [];
 
     // Filtrar los correos internos de requerimiento ("Nueva Consulta Web: ...")
@@ -440,7 +460,8 @@ export async function sincronizarRequerimientosDesdeResend(forzar = false) {
 
     let nuevosInsertados = 0;
 
-    for (const item of consultasWeb.slice(0, 15)) {
+    for (const item of consultasWeb.slice(0, 10)) {
+      await esperarMs(600);
       const detailResp = await fetch(
         `https://api.resend.com/emails/${encodeURIComponent(item.id)}`,
         {
@@ -452,12 +473,13 @@ export async function sincronizarRequerimientosDesdeResend(forzar = false) {
         }
       );
 
-      if (!detailResp.ok) continue;
-      const detalle = await detailResp.json().catch(() => null);
-      if (!detalle) continue;
+      const detalle = detailResp.ok
+        ? await detailResp.json().catch(() => item)
+        : item;
 
-      const texto = String(detalle.text || "");
-      const asunto = String(detalle.subject || "");
+      const texto = String(detalle?.text || "");
+      const html = String(detalle?.html || "");
+      const asunto = String(detalle?.subject || item.subject || "");
 
       // Extraer del asunto: "Nueva Consulta Web: Nombre (Rubro)"
       const matchAsunto = asunto.match(
@@ -471,10 +493,12 @@ export async function sincronizarRequerimientosDesdeResend(forzar = false) {
       };
 
       const nombre =
-        extraerCampo("Nombre") || (matchAsunto ? matchAsunto[1].trim() : "Cliente Web");
-      const replyToRaw = Array.isArray(detalle.reply_to)
-        ? detalle.reply_to[0]
-        : detalle.reply_to;
+        extraerCampo("Nombre") ||
+        (matchAsunto ? matchAsunto[1].trim() : "Cliente Web");
+      const replyToSource = detalle?.reply_to || item?.reply_to;
+      const replyToRaw = Array.isArray(replyToSource)
+        ? replyToSource[0]
+        : replyToSource;
       const email =
         extraerCampo("Correo del cliente") ||
         String(replyToRaw || "cliente@lhbosistemas.com").trim();
@@ -492,12 +516,16 @@ export async function sincronizarRequerimientosDesdeResend(forzar = false) {
       const partesMensaje = texto.split(/Detalles del requerimiento:\s*\r?\n/i);
       if (partesMensaje.length > 1) {
         mensaje = partesMensaje.slice(1).join("\n").trim();
+      } else if (html) {
+        const matchHtml = html.match(/white-space:\s*pre-wrap[^>]*>([\s\S]*?)<\/p>/i);
+        mensaje = matchHtml ? matchHtml[1].trim() : asunto;
       } else {
         mensaje = texto.trim() || asunto;
       }
 
-      const fechaCreacion = detalle.created_at
-        ? new Date(detalle.created_at).toISOString()
+      const fechaRaw = detalle?.created_at || item?.created_at;
+      const fechaCreacion = fechaRaw
+        ? new Date(fechaRaw).toISOString()
         : new Date().toISOString();
 
       if (usarPostgres && pgPool) {
@@ -576,10 +604,17 @@ export async function sincronizarRequerimientosDesdeResend(forzar = false) {
       }
     }
 
-    return { sincronizados: nuevosInsertados };
+    ultimoEstadoSyncResend = {
+      ok: true,
+      total_correos: listaCorreos.length,
+      consultas_web: consultasWeb.length,
+      sincronizados: nuevosInsertados,
+    };
+    return ultimoEstadoSyncResend;
   } catch (err) {
     console.warn("Advertencia sincronizando correos desde Resend:", err.message);
-    return { sincronizados: 0 };
+    ultimoEstadoSyncResend = { ok: false, error: err.message };
+    return ultimoEstadoSyncResend;
   }
 }
 
@@ -589,7 +624,7 @@ export async function sincronizarRequerimientosDesdeResend(forzar = false) {
  */
 export async function listarPanelAdmin() {
   await inicializarBaseDeDatos();
-  await sincronizarRequerimientosDesdeResend();
+  const syncResend = await sincronizarRequerimientosDesdeResend();
 
   if (usarPostgres && pgPool) {
     const reqRes = await pgPool.query(`
@@ -633,6 +668,7 @@ export async function listarPanelAdmin() {
     return {
       status: 200,
       body: {
+        sincronizacion_resend: syncResend,
         requerimientos: reqRes.rows,
         presupuestos: preRes.rows.map((p) => ({
           ...p,
@@ -724,6 +760,7 @@ export async function listarPanelAdmin() {
   return {
     status: 200,
     body: {
+      sincronizacion_resend: syncResend,
       requerimientos,
       presupuestos,
       proyectos,
