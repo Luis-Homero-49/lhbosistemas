@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-export default function Navbar() {
+export default function Navbar({ onAbrirPresupuesto, onAbrirAdmin }) {
   const [menuAbierto, setMenuAbierto] = useState(false);
 
   const enlaces = [
@@ -9,6 +9,26 @@ export default function Navbar() {
     { nombre: "Trayectoria", href: "#trayectoria" },
     { nombre: "Contacto", href: "#contacto" },
   ];
+
+  const irAPresupuesto = (e) => {
+    e.preventDefault();
+    setMenuAbierto(false);
+    if (onAbrirPresupuesto) {
+      onAbrirPresupuesto("");
+    } else {
+      window.location.href = "/presupuesto";
+    }
+  };
+
+  const irAAdmin = (e) => {
+    e.preventDefault();
+    setMenuAbierto(false);
+    if (onAbrirAdmin) {
+      onAbrirAdmin();
+    } else {
+      window.location.href = "/admin";
+    }
+  };
 
   return (
     <nav className="fixed top-0 left-0 w-full bg-white/95 backdrop-blur-md text-slate-800 border-b border-slate-200 shadow-xs z-50">
@@ -29,7 +49,7 @@ export default function Navbar() {
         </a>
 
         {/* Enlaces de navegación (Escritorio) */}
-        <div className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">
+        <div className="hidden md:flex items-center gap-6 text-sm font-semibold text-slate-600">
           {enlaces.map((item) => (
             <a
               key={item.href}
@@ -39,18 +59,25 @@ export default function Navbar() {
               {item.nombre}
             </a>
           ))}
+          <a
+            href="/presupuesto"
+            onClick={irAPresupuesto}
+            className="text-blue-600 hover:text-blue-800 font-bold transition-colors"
+          >
+            Consultar Presupuesto
+          </a>
         </div>
 
         {/* Botones de acción rápida */}
-        <div className="hidden sm:flex items-center gap-3">
+        <div className="hidden sm:flex items-center gap-2.5">
           <a
-            href="https://wa.me/584243008608?text=Hola%2C%20quisiera%20consultar%20sobre%20un%20proyecto%20web%20o%20un%20sistema%20personalizado."
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex items-center gap-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold px-4 py-2.5 rounded-xl transition-all"
+            href="/admin"
+            onClick={irAAdmin}
+            className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-bold px-3.5 py-2.5 rounded-xl transition-all"
+            title="Abrir Bandeja de Requerimientos y Elaboración de Presupuestos"
           >
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            WhatsApp Directo
+            <span>📋</span>
+            <span>Panel Presupuestos</span>
           </a>
           <a
             href="#contacto"
@@ -67,11 +94,26 @@ export default function Navbar() {
           className="md:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100"
           aria-label="Abrir menú"
         >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg
+            className="w-6 h-6"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
             {menuAbierto ? (
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             ) : (
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 6h16M4 12h16M4 18h16"
+              />
             )}
           </svg>
         </button>
@@ -90,21 +132,27 @@ export default function Navbar() {
               {item.nombre}
             </a>
           ))}
+          <a
+            href="/presupuesto"
+            onClick={irAPresupuesto}
+            className="block py-2 text-sm font-bold text-blue-600 hover:text-blue-800"
+          >
+            Consultar Mi Presupuesto
+          </a>
           <div className="pt-2 flex flex-col gap-2">
             <a
-              href="https://wa.me/584243008608?text=Hola%2C%20quisiera%20consultar%20sobre%20un%20proyecto%20web%20o%20un%20sistema%20personalizado."
-              target="_blank"
-              rel="noreferrer"
-              className="w-full text-center bg-emerald-600 text-white text-sm font-semibold py-2.5 rounded-xl"
+              href="/admin"
+              onClick={irAAdmin}
+              className="w-full text-center bg-slate-900 text-white text-sm font-semibold py-2.5 rounded-xl"
             >
-              Escribir por WhatsApp
+              📋 Panel de Requerimientos y Presupuestos
             </a>
             <a
               href="#contacto"
               onClick={() => setMenuAbierto(false)}
               className="w-full text-center bg-blue-600 text-white text-sm font-semibold py-2.5 rounded-xl"
             >
-              Formulario de Contacto
+              Solicitar Presupuesto
             </a>
           </div>
         </div>

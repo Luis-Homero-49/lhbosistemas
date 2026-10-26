@@ -5,7 +5,7 @@ const CORREO_CONTACTO = "luishomerobo@gmail.com";
 const API_BASE = import.meta.env.VITE_API_URL || "";
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-export default function Contacto() {
+export default function Contacto({ onAbrirAdmin }) {
   const [formulario, setFormulario] = useState({
     nombre: "",
     correo: "",
@@ -54,6 +54,12 @@ export default function Contacto() {
       });
       return;
     }
+    // Registrar también en la Bandeja de Requerimientos del Panel
+    fetch(`${API_BASE}/api/presupuestos/requerimientos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(formulario),
+    }).catch(() => {});
     const texto = encodeURIComponent(construirTextoConsulta());
     window.open(`https://wa.me/${WHATSAPP_NUMERO}?text=${texto}`, "_blank", "noopener,noreferrer");
   };
@@ -337,13 +343,23 @@ export default function Contacto() {
               {estadoCorreo.exito && (
                 <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs sm:text-sm font-medium flex items-start gap-2.5">
                   <span>✅</span>
-                  <div>
+                  <div className="space-y-2">
                     <p className="font-bold">¡Su requerimiento fue recibido con éxito!</p>
-                    <p className="text-emerald-700 mt-0.5 leading-relaxed">
+                    <p className="text-emerald-700 leading-relaxed">
                       Hemos enviado la confirmación de recepción a{" "}
                       <strong>{estadoCorreo.correoConfirmado}</strong>. Nuestro equipo analizará su solicitud y le responderá en las próximas{" "}
                       <strong>2 a 4 horas hábiles</strong> (plazo máximo de 24 horas).
                     </p>
+                    {onAbrirAdmin && (
+                      <button
+                        type="button"
+                        onClick={onAbrirAdmin}
+                        className="inline-flex items-center gap-1.5 text-xs font-extrabold text-blue-700 hover:text-blue-900 underline cursor-pointer pt-1"
+                      >
+                        <span>📋</span>
+                        <span>Ir a la Bandeja de Requerimientos para elaborar este presupuesto →</span>
+                      </button>
+                    )}
                   </div>
                 </div>
               )}

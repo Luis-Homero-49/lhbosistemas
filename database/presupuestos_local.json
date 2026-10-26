@@ -1,0 +1,61 @@
+{
+  "clientes": [
+    {
+      "id": 1,
+      "nombre": "Carlos Mendoza",
+      "empresa": "Distribuidora El Sol C.A.",
+      "email": "cmendoza@distribuidoraelsol.com",
+      "telefono": "+58 414-5551234",
+      "creado_en": "2026-10-26T22:47:59.906Z"
+    }
+  ],
+  "requerimientos": [
+    {
+      "id": 1,
+      "cliente_id": null,
+      "nombre": "María Fernanda Rivas",
+      "empresa": "Comercializadora Los Andes C.A.",
+      "email": "mfrivas@comercializadoralosandes.com",
+      "telefono": "+58 412-8904512",
+      "rubro": "Sistema de Inventario / Facturación",
+      "mensaje": "Hola, necesitamos un sistema web para controlar el inventario de 3 sucursales, lista de precios en dólares con cálculo automático en bolívares a tasa BCV y emisión de pedidos por vendedores.",
+      "estado": "nuevo",
+      "presupuesto_id": null,
+      "creado_en": "2026-10-26T22:47:59.907Z",
+      "actualizado_en": "2026-10-26T22:47:59.907Z"
+    },
+    {
+      "id": 2,
+      "cliente_id": 1,
+      "nombre": "Carlos Mendoza",
+      "empresa": "Distribuidora El Sol C.A.",
+      "email": "cmendoza@distribuidoraelsol.com",
+      "telefono": "+58 414-5551234",
+      "rubro": "Página Web / Catálogo Comercial",
+      "mensaje": "Requerimos catálogo digital B2B para clientes mayoristas integrado con inventario y cuentas por cobrar multimoneda.",
+      "estado": "cotizado",
+      "presupuesto_id": 1,
+      "creado_en": "2026-10-25T22:47:59.907Z",
+      "actualizado_en": "2026-10-26T22:47:59.907Z"
+    }
+  ],
+  "presupuestos": [
+    {
+      "id": 1,
+      "cliente_id": 1,
+      "codigo": "PRE-2026-001",
+      "titulo": "Sistema Web de Inventario, Catálogo B2B y Facturación Multimoneda (USD/VES)",
+      "alcance": "1. Panel Administrativo de Inventario y Precios en USD con conversión automática a Bolívares (VES) según tasa oficial BCV.\n\n2. Catálogo Digital B2B con carrito de pedidos para clientes mayoristas y generación de notas de entrega en PDF.\n\n3. Módulo de Cuentas por Cobrar, registro de pagos en divisas y Bolívares (Pago Móvil / Transferencia) con conciliación de referencias bancarias.\n\n4. Reporte gerencial de Ganancias y Pérdidas (P&L) en tiempo real y despliegue en servidor seguro con certificado SSL.\n\n5. Capacitación remota al personal y soporte técnico garantizado por 60 días tras la puesta en producción.",
+      "monto_total_usd": 1450,
+      "token_acceso": "demo-pre-2026-001",
+      "estado": "pendiente",
+      "comentarios_cliente": null,
+      "fecha_vencimiento": "2026-11-15",
+      "creado_en": "2026-10-26T22:47:59.907Z",
+      "actualizado_en": "2026-10-26T22:47:59.907Z"
+    }
+  ],
+  "proyectos": [],
+  "facturas_cobros": [],
+  "gastos_proyecto": []
+}

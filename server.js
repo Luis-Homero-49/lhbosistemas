@@ -2,6 +2,19 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  inicializarBaseDeDatos,
+  obtenerPresupuestoPorToken,
+  responderPresupuestoPorToken,
+  obtenerBalanceProyecto,
+  registrarCobroProyecto,
+  registrarGastoProyecto,
+  crearPresupuesto,
+  registrarRequerimientoContacto,
+  actualizarEstadoRequerimiento,
+  listarPanelAdmin,
+  enviarPresupuestoPorCorreo,
+} from "./backend/routers/presupuestos.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -98,6 +111,22 @@ async function manejarEnvioContacto(req, res) {
       });
     }
 
+    // Guardar automáticamente el requerimiento en la bandeja del Panel de Presupuestos
+    let requerimientoRegistrado = null;
+    try {
+      const regRes = await registrarRequerimientoContacto({
+        nombre: nombre.trim(),
+        correo: correoLimpio,
+        telefono: telefonoLimpio,
+        empresa: empresa.trim(),
+        rubro: rubro.trim(),
+        mensaje: mensaje.trim(),
+      });
+      requerimientoRegistrado = regRes.body;
+    } catch (errReg) {
+      console.warn("Advertencia al guardar requerimiento en base de datos:", errReg);
+    }
+
     const apiKey = (
       process.env.RESEND_API_KEY ||
       process.env.resend_api_key ||
@@ -121,10 +150,14 @@ async function manejarEnvioContacto(req, res) {
     ).trim();
 
     if (!apiKey) {
-      console.error("Falta configurar RESEND_API_KEY en las variables de entorno.");
-      return responderJson(res, 500, {
-        ok: false,
-        error: "El servidor de correo no tiene configurada la clave RESEND_API_KEY.",
+      console.warn(
+        "Requerimiento guardado en la Bandeja del Panel (/admin), pero falta RESEND_API_KEY para enviar correo en este entorno."
+      );
+      return responderJson(res, 200, {
+        ok: true,
+        id: `local-req-${requerimientoRegistrado?.id || Date.now()}`,
+        confirmacionEnviada: false,
+        requerimiento: requerimientoRegistrado,
       });
     }
 
@@ -178,6 +211,12 @@ async function manejarEnvioContacto(req, res) {
               Detalles del proyecto o necesidad:
             </p>
             <p style="margin: 0; font-size: 14px; line-height: 1.6; white-space: pre-wrap; color: #1e293b;">${escaparHtml(mensaje.trim())}</p>
+          </div>
+
+          <div style="margin-top: 22px; text-align: center;">
+            <a href="https://lhbosistemas.com/admin" style="display: inline-block; background: #0f172a; color: #ffffff; text-decoration: none; font-weight: bold; font-size: 13px; padding: 12px 24px; border-radius: 10px;">
+              📋 Abrir Bandeja y Elaborar Presupuesto →
+            </a>
           </div>
         </div>
       </div>
@@ -344,6 +383,187 @@ const server = http.createServer(async (req, res) => {
     return manejarEnvioContacto(req, res);
   }
 
+  // ====================================================================
+  // ENDPOINTS DEL MÓDULO DE PRESUPUESTOS, PROYECTOS Y P&L
+  // ====================================================================
+
+  // 1. Obtener presupuesto para la vista del cliente vía Token seguro
+  const matchVerPresupuesto = url.pathname.match(
+    /^\/api\/presupuestos\/ver\/([^/]+)$/
+  );
+  if (matchVerPresupuesto && req.method === "GET") {
+    try {
+      const token = decodeURIComponent(matchVerPresupuesto[1]);
+      const presupuesto = await obtenerPresupuestoPorToken(token);
+      if (!presupuesto) {
+        return responderJson(res, 404, {
+          detail: "Presupuesto no encontrado o enlace inválido.",
+        });
+      }
+      return responderJson(res, 200, presupuesto);
+    } catch (err) {
+      console.error("Error en GET /api/presupuestos/ver/:token:", err);
+      return responderJson(res, 500, {
+        detail: "Error interno al consultar el presupuesto.",
+      });
+    }
+  }
+
+  // 2. Procesar acción del cliente (Aprobar, Negociar o Rechazar)
+  const matchResponderPresupuesto = url.pathname.match(
+    /^\/api\/presupuestos\/responder\/([^/]+)$/
+  );
+  if (matchResponderPresupuesto && req.method === "POST") {
+    try {
+      const token = decodeURIComponent(matchResponderPresupuesto[1]);
+      const body = await leerCuerpoJson(req);
+      const resultado = await responderPresupuestoPorToken(token, body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en POST /api/presupuestos/responder/:token:", err);
+      return responderJson(res, 500, {
+        detail: err.message || "Error interno al procesar respuesta del presupuesto.",
+      });
+    }
+  }
+
+  // 3. Estado de Ganancias y Pérdidas (P&L) por Proyecto
+  const matchBalanceProyecto = url.pathname.match(
+    /^\/api\/presupuestos\/proyecto\/(\d+)\/balance$/
+  );
+  if (matchBalanceProyecto && req.method === "GET") {
+    try {
+      const proyectoId = Number(matchBalanceProyecto[1]);
+      const resultado = await obtenerBalanceProyecto(proyectoId);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error(
+        "Error en GET /api/presupuestos/proyecto/:id/balance:",
+        err
+      );
+      return responderJson(res, 500, {
+        detail: "Error interno al calcular el balance P&L del proyecto.",
+      });
+    }
+  }
+
+  // 4. Registrar cobro / factura de un proyecto (USD / VES con tasa BCV)
+  if (url.pathname === "/api/presupuestos/cobros" && req.method === "POST") {
+    try {
+      const body = await leerCuerpoJson(req);
+      const resultado = await registrarCobroProyecto(body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en POST /api/presupuestos/cobros:", err);
+      return responderJson(res, 500, {
+        detail: "Error interno al registrar el cobro.",
+      });
+    }
+  }
+
+  // 5. Registrar gasto directo de un proyecto (Normalizado a USD para P&L)
+  if (url.pathname === "/api/presupuestos/gastos" && req.method === "POST") {
+    try {
+      const body = await leerCuerpoJson(req);
+      const resultado = await registrarGastoProyecto(body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en POST /api/presupuestos/gastos:", err);
+      return responderJson(res, 500, {
+        detail: "Error interno al registrar el gasto.",
+      });
+    }
+  }
+
+  // 6. Crear un nuevo presupuesto con su token seguro
+  if (url.pathname === "/api/presupuestos/crear" && req.method === "POST") {
+    try {
+      const body = await leerCuerpoJson(req);
+      const resultado = await crearPresupuesto(body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en POST /api/presupuestos/crear:", err);
+      return responderJson(res, 500, {
+        detail: "Error interno al crear el presupuesto.",
+      });
+    }
+  }
+
+  // 7. Resumen consolidado para el Panel de Gestión (Requerimientos, Presupuestos y Proyectos P&L)
+  if (
+    url.pathname === "/api/presupuestos/admin/resumen" &&
+    req.method === "GET"
+  ) {
+    try {
+      const resultado = await listarPanelAdmin();
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en GET /api/presupuestos/admin/resumen:", err);
+      return responderJson(res, 500, {
+        detail: "Error interno al cargar el panel de gestión.",
+      });
+    }
+  }
+
+  // 8. Registrar un requerimiento manualmente desde el panel
+  if (
+    url.pathname === "/api/presupuestos/requerimientos" &&
+    req.method === "POST"
+  ) {
+    try {
+      const body = await leerCuerpoJson(req);
+      const resultado = await registrarRequerimientoContacto(body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en POST /api/presupuestos/requerimientos:", err);
+      return responderJson(res, 500, {
+        detail: "Error interno al registrar el requerimiento.",
+      });
+    }
+  }
+
+  // 9. Actualizar estado de un requerimiento
+  const matchEstadoReq = url.pathname.match(
+    /^\/api\/presupuestos\/requerimientos\/(\d+)\/estado$/
+  );
+  if (matchEstadoReq && req.method === "POST") {
+    try {
+      const reqId = Number(matchEstadoReq[1]);
+      const body = await leerCuerpoJson(req);
+      const resultado = await actualizarEstadoRequerimiento(reqId, body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error(
+        "Error en POST /api/presupuestos/requerimientos/:id/estado:",
+        err
+      );
+      return responderJson(res, 500, {
+        detail: "Error interno al actualizar estado del requerimiento.",
+      });
+    }
+  }
+
+  // 10. Enviar presupuesto por correo electrónico al cliente vía Resend
+  const matchEnviarCorreoPre = url.pathname.match(
+    /^\/api\/presupuestos\/enviar-correo\/(\d+)$/
+  );
+  if (matchEnviarCorreoPre && req.method === "POST") {
+    try {
+      const preId = Number(matchEnviarCorreoPre[1]);
+      const body = await leerCuerpoJson(req);
+      const resultado = await enviarPresupuestoPorCorreo(preId, body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error(
+        "Error en POST /api/presupuestos/enviar-correo/:id:",
+        err
+      );
+      return responderJson(res, 500, {
+        detail: "Error interno al enviar el presupuesto por correo.",
+      });
+    }
+  }
+
   // Servir archivos estáticos del build de Vite (dist)
   let filePath = path.join(
     DIST_DIR,
@@ -376,6 +596,7 @@ const server = http.createServer(async (req, res) => {
   });
 });
 
-server.listen(PORT, "0.0.0.0", () => {
+server.listen(PORT, "0.0.0.0", async () => {
+  await inicializarBaseDeDatos();
   console.log(`Servidor LHBO Sistemas activo en puerto ${PORT}`);
 });

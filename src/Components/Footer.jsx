@@ -1,19 +1,48 @@
 const ANIO_ACTUAL = new Date().getFullYear();
 
-export default function Footer() {
+export default function Footer({ onAbrirPresupuesto, onAbrirAdmin }) {
   return (
     <footer className="bg-white border-t border-slate-200 py-10 text-slate-700 text-xs">
-      <div className="max-w-6xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
         <div>
           <span className="font-black text-base tracking-tight text-slate-900">
             LHBO<span className="text-blue-600">.</span> Sistemas
           </span>
           <p className="text-slate-500 mt-1">
-            Consultoría y desarrollo computarizado con más de 50 años de trayectoria.
+            Consultoría y desarrollo computarizado con más de 50 años de
+            trayectoria.
           </p>
         </div>
 
-        <div className="text-slate-500 text-center sm:text-right">
+        <div className="flex flex-wrap items-center gap-4 text-xs font-semibold">
+          <a
+            href="/presupuesto"
+            onClick={(e) => {
+              if (onAbrirPresupuesto) {
+                e.preventDefault();
+                onAbrirPresupuesto("");
+              }
+            }}
+            className="text-slate-600 hover:text-blue-600 transition-colors"
+          >
+            Portal de Presupuestos (Clientes)
+          </a>
+          <span className="text-slate-300">•</span>
+          <a
+            href="/admin"
+            onClick={(e) => {
+              if (onAbrirAdmin) {
+                e.preventDefault();
+                onAbrirAdmin();
+              }
+            }}
+            className="text-blue-600 hover:text-blue-800 font-bold transition-colors"
+          >
+            📋 Centro de Requerimientos & Presupuestos
+          </a>
+        </div>
+
+        <div className="text-slate-500 text-center md:text-right">
           © {ANIO_ACTUAL} LHBO Sistemas. Todos los derechos reservados.
         </div>
       </div>
