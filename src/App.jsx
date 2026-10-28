@@ -9,6 +9,14 @@ import Contacto from "./Components/Contacto";
 import Footer from "./Components/Footer";
 import VistaPresupuestoCliente from "./Components/VistaPresupuestoCliente";
 import PanelGestionPresupuestos from "./Components/PanelGestionPresupuestos";
+import LoginAdmin from "./Components/LoginAdmin";
+import {
+  obtenerTokenAdmin,
+  limpiarSesionAdmin,
+  instalarInterceptorFetchAdmin,
+} from "./utils/adminAuth";
+
+instalarInterceptorFetchAdmin();
 
 function detectarRutaActiva() {
   const { pathname, search, hash } = window.location;
@@ -63,6 +71,7 @@ function detectarRutaActiva() {
     return {
       vista: "admin",
       token: "",
+      pestanaAdmin: "requerimientos",
     };
   }
 
@@ -79,12 +88,53 @@ function detectarRutaActiva() {
 
 export default function App() {
   const [rutaActiva, setRutaActiva] = useState(() => detectarRutaActiva());
+  const [esAdmin, setEsAdmin] = useState(false);
+  const [verificandoAdmin, setVerificandoAdmin] = useState(() =>
+    Boolean(obtenerTokenAdmin())
+  );
   const [resumenAlertas, setResumenAlertas] = useState({
     nuevosRequerimientos: [],
     enNegociacion: [],
   });
   const [datosRedes, setDatosRedes] = useState(null);
   const [ocultarBannerAlerta, setOcultarBannerAlerta] = useState(false);
+
+  // Verificar sesión de administrador al cargar la aplicación
+  useEffect(() => {
+    const token = obtenerTokenAdmin();
+    if (!token) {
+      setEsAdmin(false);
+      setVerificandoAdmin(false);
+      return;
+    }
+
+    let cancelado = false;
+    async function verificarSesion() {
+      try {
+        const res = await fetch("/api/auth/verificar");
+        if (!cancelado) {
+          if (res.ok) {
+            setEsAdmin(true);
+          } else {
+            limpiarSesionAdmin();
+            setEsAdmin(false);
+          }
+        }
+      } catch {
+        if (!cancelado) {
+          setEsAdmin(false);
+        }
+      } finally {
+        if (!cancelado) {
+          setVerificandoAdmin(false);
+        }
+      }
+    }
+    verificarSesion();
+    return () => {
+      cancelado = true;
+    };
+  }, []);
 
   useEffect(() => {
     const manejarPopState = () => {
@@ -98,47 +148,53 @@ export default function App() {
     };
   }, []);
 
+  // Cargar datos públicos de redes sociales y (solo si es Admin) alertas de requerimientos
   useEffect(() => {
     if (rutaActiva.vista !== "inicio") return;
     let cancelado = false;
 
-    async function verificarNuevosRequerimientos() {
+    async function cargarDatosInicio() {
       try {
-        const [resPres, resRedes] = await Promise.all([
-          fetch("/api/presupuestos/admin/resumen").catch(() => null),
-          fetch("/api/redes-sociales").catch(() => null),
-        ]);
-
-        if (!cancelado && resPres && resPres.ok) {
-          const data = await resPres.json().catch(() => ({}));
-          const reqs = Array.isArray(data.requerimientos)
-            ? data.requerimientos
-            : [];
-          const pres = Array.isArray(data.presupuestos)
-            ? data.presupuestos
-            : [];
-          setResumenAlertas({
-            nuevosRequerimientos: reqs.filter(
-              (r) => r.estado === "nuevo" || r.estado === "en_elaboracion"
-            ),
-            enNegociacion: pres.filter((p) => p.estado === "en_negociacion"),
-          });
-        }
-
+        // 1. Muro público de redes sociales (para cualquier visitante)
+        const resRedes = await fetch("/api/redes-sociales").catch(() => null);
         if (!cancelado && resRedes && resRedes.ok) {
           const dataRedes = await resRedes.json().catch(() => null);
           if (dataRedes) setDatosRedes(dataRedes);
+        }
+
+        // 2. Alertas de requerimientos nuevos EXCLUSIVAMENTE si el administrador tiene sesión activa
+        if (esAdmin) {
+          const resPres = await fetch("/api/presupuestos/admin/resumen").catch(
+            () => null
+          );
+          if (!cancelado && resPres && resPres.ok) {
+            const data = await resPres.json().catch(() => ({}));
+            const reqs = Array.isArray(data.requerimientos)
+              ? data.requerimientos
+              : [];
+            const pres = Array.isArray(data.presupuestos)
+              ? data.presupuestos
+              : [];
+            setResumenAlertas({
+              nuevosRequerimientos: reqs.filter(
+                (r) => r.estado === "nuevo" || r.estado === "en_elaboracion"
+              ),
+              enNegociacion: pres.filter((p) => p.estado === "en_negociacion"),
+            });
+          }
+        } else {
+          setResumenAlertas({ nuevosRequerimientos: [], enNegociacion: [] });
         }
       } catch {
         // Silencioso en caso de carga offline
       }
     }
 
-    verificarNuevosRequerimientos();
+    cargarDatosInicio();
     return () => {
       cancelado = true;
     };
-  }, [rutaActiva.vista]);
+  }, [rutaActiva.vista, esAdmin]);
 
   const volverAlSitioPrincipal = () => {
     window.history.pushState({}, "", "/");
@@ -148,13 +204,26 @@ export default function App() {
 
   const abrirPanelAdmin = () => {
     window.history.pushState({}, "", "/admin");
-    setRutaActiva({ vista: "admin", token: "", pestanaAdmin: "requerimientos" });
+    setRutaActiva({
+      vista: "admin",
+      token: "",
+      pestanaAdmin: "requerimientos",
+    });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const abrirGestorRedes = () => {
     window.history.pushState({}, "", "/redes");
     setRutaActiva({ vista: "admin", token: "", pestanaAdmin: "redes" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const cerrarSesionAdmin = () => {
+    limpiarSesionAdmin();
+    setEsAdmin(false);
+    setResumenAlertas({ nuevosRequerimientos: [], enNegociacion: [] });
+    window.history.pushState({}, "", "/");
+    setRutaActiva({ vista: "inicio", token: "" });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -168,42 +237,72 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  // Vista Administrativa (/admin, /panel, /requerimientos, /redes) protegida por credenciales
   if (rutaActiva.vista === "admin") {
+    if (verificandoAdmin) {
+      return (
+        <div className="min-h-screen bg-slate-950 text-white flex items-center justify-center p-6">
+          <div className="text-center space-y-3">
+            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto"></div>
+            <p className="text-sm font-semibold text-slate-300">
+              Verificando credenciales de administrador...
+            </p>
+          </div>
+        </div>
+      );
+    }
+
+    if (!esAdmin) {
+      return (
+        <LoginAdmin
+          onLoginExitoso={() => setEsAdmin(true)}
+          onVolverInicio={volverAlSitioPrincipal}
+        />
+      );
+    }
+
     return (
       <PanelGestionPresupuestos
         onVolverInicio={volverAlSitioPrincipal}
         onAbrirPresupuesto={abrirVistaPresupuesto}
+        onCerrarSesion={cerrarSesionAdmin}
         pestanaInicial={rutaActiva.pestanaAdmin || "requerimientos"}
       />
     );
   }
 
+  // Vista del Cliente (/presupuesto/:token): solo ve su presupuesto y el botón para volver al sitio público
   if (rutaActiva.vista === "presupuesto") {
     return (
       <VistaPresupuestoCliente
         tokenInicial={rutaActiva.token}
         onVolverInicio={volverAlSitioPrincipal}
-        onAbrirAdmin={abrirPanelAdmin}
+        onAbrirAdmin={esAdmin ? abrirPanelAdmin : null}
       />
     );
   }
 
-  const totalAlertas =
-    resumenAlertas.nuevosRequerimientos.length +
-    resumenAlertas.enNegociacion.length;
-  const ultimoRequerimiento = resumenAlertas.nuevosRequerimientos[0] || null;
+  const totalAlertas = esAdmin
+    ? resumenAlertas.nuevosRequerimientos.length +
+      resumenAlertas.enNegociacion.length
+    : 0;
+  const ultimoRequerimiento = esAdmin
+    ? resumenAlertas.nuevosRequerimientos[0] || null
+    : null;
 
   return (
     <div className="min-h-screen bg-white text-slate-900">
       <Navbar
         onAbrirPresupuesto={abrirVistaPresupuesto}
-        onAbrirAdmin={abrirPanelAdmin}
-        onAbrirRedes={abrirGestorRedes}
+        onAbrirAdmin={esAdmin ? abrirPanelAdmin : null}
+        onAbrirRedes={esAdmin ? abrirGestorRedes : null}
+        onCerrarSesionAdmin={esAdmin ? cerrarSesionAdmin : null}
+        esAdmin={esAdmin}
         cantidadPendientes={totalAlertas}
       />
 
-      {/* Aviso destacado en la página principal cuando hay requerimientos o presupuestos nuevos */}
-      {totalAlertas > 0 && !ocultarBannerAlerta && (
+      {/* Aviso destacado en la página principal EXCLUSIVO para el Administrador autenticado */}
+      {esAdmin && totalAlertas > 0 && !ocultarBannerAlerta && (
         <div className="pt-20 bg-gradient-to-r from-amber-500 via-amber-500 to-orange-500 text-slate-950 shadow-md relative z-40">
           <div className="max-w-6xl mx-auto px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-start sm:items-center gap-3">
@@ -258,13 +357,15 @@ export default function App() {
         <Trayectoria />
         <SeccionRedesSociales
           datosRedes={datosRedes}
-          onAbrirGestorRedes={abrirGestorRedes}
+          onAbrirGestorRedes={esAdmin ? abrirGestorRedes : null}
         />
-        <Contacto onAbrirAdmin={abrirPanelAdmin} />
+        <Contacto onAbrirAdmin={esAdmin ? abrirPanelAdmin : null} />
       </main>
       <Footer
         onAbrirPresupuesto={abrirVistaPresupuesto}
         onAbrirAdmin={abrirPanelAdmin}
+        esAdmin={esAdmin}
+        onCerrarSesionAdmin={esAdmin ? cerrarSesionAdmin : null}
       />
     </div>
   );

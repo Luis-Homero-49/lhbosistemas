@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import PanelRedesSociales from "./PanelRedesSociales";
+import { guardarTokenAdmin } from "../utils/adminAuth";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -249,6 +250,7 @@ function calcularPlanPago(form) {
 export default function PanelGestionPresupuestos({
   onVolverInicio,
   onAbrirPresupuesto,
+  onCerrarSesion,
   pestanaInicial = "requerimientos",
 }) {
   const [pestanaActiva, setPestanaActiva] = useState(
@@ -317,6 +319,61 @@ export default function PanelGestionPresupuestos({
     mensaje: "",
   });
 
+  // Modal para cambiar contraseña de Administrador
+  const [mostrarModalClave, setMostrarModalClave] = useState(false);
+  const [formClave, setFormClave] = useState({
+    email: "luishomerobo@gmail.com",
+    clave_actual: "",
+    clave_nueva: "",
+    confirmar_clave: "",
+  });
+  const [guardandoClave, setGuardandoClave] = useState(false);
+
+  const manejarCambiarClave = async (e) => {
+    e.preventDefault();
+    if (formClave.clave_nueva !== formClave.confirmar_clave) {
+      setNotificacion({
+        tipo: "error",
+        texto: "La nueva contraseña y su confirmación no coinciden.",
+      });
+      return;
+    }
+    setGuardandoClave(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/cambiar-clave`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: formClave.email,
+          clave_actual: formClave.clave_actual,
+          clave_nueva: formClave.clave_nueva,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) {
+        throw new Error(data.detail || "No se pudo cambiar la contraseña.");
+      }
+      if (data.token) {
+        guardarTokenAdmin(data.token);
+      }
+      setMostrarModalClave(false);
+      setFormClave((p) => ({
+        ...p,
+        clave_actual: "",
+        clave_nueva: "",
+        confirmar_clave: "",
+      }));
+      setNotificacion({
+        tipo: "exito",
+        texto: "Contraseña de administrador actualizada correctamente.",
+      });
+    } catch (err) {
+      setNotificacion({ tipo: "error", texto: err.message });
+    } finally {
+      setGuardandoClave(false);
+    }
+  };
+
   // Formulario de registro de cobros y gastos en Proyectos (P&L)
   const [formCobro, setFormCobro] = useState({
     proyecto_id: "",
@@ -342,6 +399,10 @@ export default function PanelGestionPresupuestos({
   const recargarDatos = useCallback(async () => {
     try {
       const res = await fetch(`${API_BASE}/api/presupuestos/admin/resumen`);
+      if (res.status === 401 && onCerrarSesion) {
+        onCerrarSesion();
+        return;
+      }
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(json.detail || "No se pudo cargar el panel.");
@@ -357,13 +418,17 @@ export default function PanelGestionPresupuestos({
     } finally {
       setCargando(false);
     }
-  }, []);
+  }, [onCerrarSesion]);
 
   useEffect(() => {
     let cancelado = false;
     async function cargarInicial() {
       try {
         const res = await fetch(`${API_BASE}/api/presupuestos/admin/resumen`);
+        if (res.status === 401 && onCerrarSesion) {
+          onCerrarSesion();
+          return;
+        }
         const json = await res.json().catch(() => ({}));
         if (cancelado) return;
         if (!res.ok) {
@@ -389,7 +454,7 @@ export default function PanelGestionPresupuestos({
     return () => {
       cancelado = true;
     };
-  }, []);
+  }, [onCerrarSesion]);
 
   const cargarPresupuestoEnFormulario = (preExistente, reqItem = null) => {
     const pp = preExistente.plan_pago || {};
@@ -937,7 +1002,7 @@ export default function PanelGestionPresupuestos({
             </div>
           </button>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={() => setMostrarModalReq(true)}
@@ -947,12 +1012,32 @@ export default function PanelGestionPresupuestos({
             </button>
             <button
               type="button"
+              onClick={() => setMostrarModalClave(true)}
+              className="bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-bold px-3 py-2.5 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+              title="Cambiar contraseña de administrador"
+            >
+              <span>🔑</span>
+              <span className="hidden md:inline">Cambiar Clave</span>
+            </button>
+            <button
+              type="button"
               onClick={onVolverInicio}
               className="bg-white hover:bg-slate-100 text-slate-900 text-xs font-extrabold px-4 py-2.5 rounded-xl transition-colors shadow-sm cursor-pointer flex items-center gap-1.5"
             >
               <span>🏠</span>
               <span>Volver a la Página Principal</span>
             </button>
+            {onCerrarSesion && (
+              <button
+                type="button"
+                onClick={onCerrarSesion}
+                className="bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold px-3.5 py-2.5 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                title="Cerrar sesión de administrador"
+              >
+                <span>🔒</span>
+                <span className="hidden sm:inline">Cerrar Sesión</span>
+              </button>
+            )}
           </div>
         </div>
       </header>
@@ -3427,6 +3512,114 @@ export default function PanelGestionPresupuestos({
                   className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer"
                 >
                   Guardar en Bandeja
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal para cambiar contraseña de Administrador */}
+      {mostrarModalClave && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-3">
+              <h3 className="text-base font-extrabold text-slate-900">
+                🔑 Cambiar Credenciales de Administrador
+              </h3>
+              <button
+                type="button"
+                onClick={() => setMostrarModalClave(false)}
+                className="text-slate-400 hover:text-slate-700 text-sm font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={manejarCambiarClave} className="space-y-3">
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Correo Administrador
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={formClave.email}
+                  onChange={(e) =>
+                    setFormClave((p) => ({ ...p, email: e.target.value }))
+                  }
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Contraseña Actual *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={formClave.clave_actual}
+                  onChange={(e) =>
+                    setFormClave((p) => ({
+                      ...p,
+                      clave_actual: e.target.value,
+                    }))
+                  }
+                  placeholder="Ingrese su contraseña actual"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Nueva Contraseña (mínimo 6 caracteres) *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={formClave.clave_nueva}
+                  onChange={(e) =>
+                    setFormClave((p) => ({ ...p, clave_nueva: e.target.value }))
+                  }
+                  placeholder="Nueva contraseña segura"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-600 mb-1">
+                  Confirmar Nueva Contraseña *
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={formClave.confirmar_clave}
+                  onChange={(e) =>
+                    setFormClave((p) => ({
+                      ...p,
+                      confirmar_clave: e.target.value,
+                    }))
+                  }
+                  placeholder="Repita la nueva contraseña"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setMostrarModalClave(false)}
+                  className="px-4 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={guardandoClave}
+                  className="bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl cursor-pointer"
+                >
+                  {guardandoClave ? "Guardando..." : "Actualizar Contraseña"}
                 </button>
               </div>
             </form>

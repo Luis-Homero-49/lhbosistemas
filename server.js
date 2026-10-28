@@ -21,6 +21,11 @@ import {
   guardarPublicacionRedSocial,
   eliminarPublicacionRedSocial,
 } from "./backend/routers/redes_sociales.js";
+import {
+  iniciarSesionAdmin,
+  verificarSolicitudAdmin,
+  cambiarCredencialesAdmin,
+} from "./backend/routers/auth_admin.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -78,7 +83,7 @@ function responderJson(res, status, payload) {
     "Content-Type": "application/json; charset=utf-8",
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization",
   });
   res.end(JSON.stringify(payload));
 }
@@ -380,9 +385,63 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
       "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     });
     return res.end();
+  }
+
+  // ====================================================================
+  // ENDPOINTS DE AUTENTICACIÓN DE ADMINISTRADOR
+  // ====================================================================
+  if (url.pathname === "/api/auth/login" && req.method === "POST") {
+    try {
+      const body = await leerCuerpoJson(req);
+      const resultado = await iniciarSesionAdmin(body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en POST /api/auth/login:", err);
+      return responderJson(res, 500, {
+        ok: false,
+        detail: "Error interno al verificar credenciales.",
+      });
+    }
+  }
+
+  if (url.pathname === "/api/auth/verificar" && req.method === "GET") {
+    try {
+      const sesion = await verificarSolicitudAdmin(req);
+      if (!sesion) {
+        return responderJson(res, 401, {
+          ok: false,
+          autenticado: false,
+          detail: "Sesión de administrador no válida o expirada.",
+        });
+      }
+      return responderJson(res, 200, {
+        ok: true,
+        autenticado: true,
+        admin: sesion,
+      });
+    } catch {
+      return responderJson(res, 401, {
+        ok: false,
+        autenticado: false,
+      });
+    }
+  }
+
+  if (url.pathname === "/api/auth/cambiar-clave" && req.method === "POST") {
+    try {
+      const body = await leerCuerpoJson(req);
+      const resultado = await cambiarCredencialesAdmin(req, body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en POST /api/auth/cambiar-clave:", err);
+      return responderJson(res, 500, {
+        ok: false,
+        detail: "Error interno al actualizar la contraseña.",
+      });
+    }
   }
 
   if (url.pathname === "/api/contacto" && req.method === "POST") {
@@ -433,11 +492,17 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 3. Estado de Ganancias y Pérdidas (P&L) por Proyecto
+  // 3. Estado de Ganancias y Pérdidas (P&L) por Proyecto (Solo Admin)
   const matchBalanceProyecto = url.pathname.match(
     /^\/api\/presupuestos\/proyecto\/(\d+)\/balance$/
   );
   if (matchBalanceProyecto && req.method === "GET") {
+    const sesionAdmin = await verificarSolicitudAdmin(req);
+    if (!sesionAdmin) {
+      return responderJson(res, 401, {
+        detail: "No autorizado. Inicie sesión como administrador.",
+      });
+    }
     try {
       const proyectoId = Number(matchBalanceProyecto[1]);
       const resultado = await obtenerBalanceProyecto(proyectoId);
@@ -453,8 +518,14 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 4. Registrar cobro / factura de un proyecto (USD / VES con tasa BCV)
+  // 4. Registrar cobro / factura de un proyecto (USD / VES con tasa BCV) (Solo Admin)
   if (url.pathname === "/api/presupuestos/cobros" && req.method === "POST") {
+    const sesionAdmin = await verificarSolicitudAdmin(req);
+    if (!sesionAdmin) {
+      return responderJson(res, 401, {
+        detail: "No autorizado. Inicie sesión como administrador.",
+      });
+    }
     try {
       const body = await leerCuerpoJson(req);
       const resultado = await registrarCobroProyecto(body);
@@ -467,8 +538,14 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 5. Registrar gasto directo de un proyecto (Normalizado a USD para P&L)
+  // 5. Registrar gasto directo de un proyecto (Normalizado a USD para P&L) (Solo Admin)
   if (url.pathname === "/api/presupuestos/gastos" && req.method === "POST") {
+    const sesionAdmin = await verificarSolicitudAdmin(req);
+    if (!sesionAdmin) {
+      return responderJson(res, 401, {
+        detail: "No autorizado. Inicie sesión como administrador.",
+      });
+    }
     try {
       const body = await leerCuerpoJson(req);
       const resultado = await registrarGastoProyecto(body);
@@ -481,8 +558,14 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 6. Crear un nuevo presupuesto con su token seguro
+  // 6. Crear un nuevo presupuesto con su token seguro (Solo Admin)
   if (url.pathname === "/api/presupuestos/crear" && req.method === "POST") {
+    const sesionAdmin = await verificarSolicitudAdmin(req);
+    if (!sesionAdmin) {
+      return responderJson(res, 401, {
+        detail: "No autorizado. Inicie sesión como administrador.",
+      });
+    }
     try {
       const body = await leerCuerpoJson(req);
       const resultado = await crearPresupuesto(body);
@@ -495,11 +578,17 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 7. Resumen consolidado para el Panel de Gestión (Requerimientos, Presupuestos y Proyectos P&L)
+  // 7. Resumen consolidado para el Panel de Gestión (Requerimientos, Presupuestos y Proyectos P&L) (Solo Admin)
   if (
     url.pathname === "/api/presupuestos/admin/resumen" &&
     req.method === "GET"
   ) {
+    const sesionAdmin = await verificarSolicitudAdmin(req);
+    if (!sesionAdmin) {
+      return responderJson(res, 401, {
+        detail: "No autorizado. Inicie sesión como administrador.",
+      });
+    }
     try {
       const resultado = await listarPanelAdmin();
       return responderJson(res, resultado.status, resultado.body);
@@ -511,7 +600,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 8. Registrar un requerimiento manualmente desde el panel
+  // 8. Registrar un requerimiento (desde formulario público o desde el panel)
   if (
     url.pathname === "/api/presupuestos/requerimientos" &&
     req.method === "POST"
@@ -528,11 +617,17 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 9. Actualizar estado de un requerimiento
+  // 9. Actualizar estado de un requerimiento (Solo Admin)
   const matchEstadoReq = url.pathname.match(
     /^\/api\/presupuestos\/requerimientos\/(\d+)\/estado$/
   );
   if (matchEstadoReq && req.method === "POST") {
+    const sesionAdmin = await verificarSolicitudAdmin(req);
+    if (!sesionAdmin) {
+      return responderJson(res, 401, {
+        detail: "No autorizado. Inicie sesión como administrador.",
+      });
+    }
     try {
       const reqId = Number(matchEstadoReq[1]);
       const body = await leerCuerpoJson(req);
@@ -549,11 +644,17 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 10. Enviar presupuesto por correo electrónico al cliente vía Resend
+  // 10. Enviar presupuesto por correo electrónico al cliente vía Resend (Solo Admin)
   const matchEnviarCorreoPre = url.pathname.match(
     /^\/api\/presupuestos\/enviar-correo\/(\d+)$/
   );
   if (matchEnviarCorreoPre && req.method === "POST") {
+    const sesionAdmin = await verificarSolicitudAdmin(req);
+    if (!sesionAdmin) {
+      return responderJson(res, 401, {
+        detail: "No autorizado. Inicie sesión como administrador.",
+      });
+    }
     try {
       const preId = Number(matchEnviarCorreoPre[1]);
       const body = await leerCuerpoJson(req);
@@ -570,7 +671,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // 11. Módulo de Administración de Redes Sociales (Instagram, Facebook, LinkedIn, TikTok, WhatsApp)
+  // 11. Módulo de Administración de Redes Sociales (GET es público para el muro; POST es Solo Admin)
   if (url.pathname === "/api/redes-sociales" && req.method === "GET") {
     try {
       const resultado = await obtenerRedesSociales();
@@ -587,6 +688,12 @@ const server = http.createServer(async (req, res) => {
     url.pathname === "/api/redes-sociales/perfiles" &&
     req.method === "POST"
   ) {
+    const sesionAdmin = await verificarSolicitudAdmin(req);
+    if (!sesionAdmin) {
+      return responderJson(res, 401, {
+        detail: "No autorizado. Inicie sesión como administrador.",
+      });
+    }
     try {
       const body = await leerCuerpoJson(req);
       const resultado = await actualizarPerfilesRedes(body);
@@ -603,6 +710,12 @@ const server = http.createServer(async (req, res) => {
     url.pathname === "/api/redes-sociales/publicaciones" &&
     req.method === "POST"
   ) {
+    const sesionAdmin = await verificarSolicitudAdmin(req);
+    if (!sesionAdmin) {
+      return responderJson(res, 401, {
+        detail: "No autorizado. Inicie sesión como administrador.",
+      });
+    }
     try {
       const body = await leerCuerpoJson(req);
       const resultado = await guardarPublicacionRedSocial(body);
@@ -619,6 +732,12 @@ const server = http.createServer(async (req, res) => {
     /^\/api\/redes-sociales\/publicaciones\/(\d+)\/eliminar$/
   );
   if (matchEliminarPub && req.method === "POST") {
+    const sesionAdmin = await verificarSolicitudAdmin(req);
+    if (!sesionAdmin) {
+      return responderJson(res, 401, {
+        detail: "No autorizado. Inicie sesión como administrador.",
+      });
+    }
     try {
       const pubId = Number(matchEliminarPub[1]);
       const resultado = await eliminarPublicacionRedSocial(pubId);

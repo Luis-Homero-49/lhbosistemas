@@ -301,22 +301,6 @@ export default function VistaPresupuestoCliente({
             {error && (
               <div className="mb-5 p-4 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-center justify-between gap-3">
                 <span>⚠️ {error}</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setInputToken("demo-pre-2026-001");
-                    setToken("demo-pre-2026-001");
-                    window.history.pushState(
-                      {},
-                      "",
-                      "/presupuesto/demo-pre-2026-001"
-                    );
-                    cargarPresupuesto("demo-pre-2026-001");
-                  }}
-                  className="underline font-bold text-rose-900 hover:text-blue-700 shrink-0 cursor-pointer"
-                >
-                  Ver presupuesto demo →
-                </button>
               </div>
             )}
 
@@ -325,7 +309,7 @@ export default function VistaPresupuestoCliente({
                 type="text"
                 value={inputToken}
                 onChange={(e) => setInputToken(e.target.value)}
-                placeholder="Ej. demo-pre-2026-001 o su UUID de acceso"
+                placeholder="Ingrese el código o token de su presupuesto"
                 className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-4 py-3 text-sm text-slate-900 focus:outline-none focus:bg-white focus:border-blue-600"
               />
               <button

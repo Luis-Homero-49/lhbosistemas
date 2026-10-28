@@ -1,6 +1,11 @@
 const ANIO_ACTUAL = new Date().getFullYear();
 
-export default function Footer({ onAbrirPresupuesto, onAbrirAdmin }) {
+export default function Footer({
+  onAbrirPresupuesto,
+  onAbrirAdmin,
+  esAdmin = false,
+  onCerrarSesionAdmin,
+}) {
   return (
     <footer className="bg-white border-t border-slate-200 py-10 text-slate-700 text-xs">
       <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
@@ -36,10 +41,28 @@ export default function Footer({ onAbrirPresupuesto, onAbrirAdmin }) {
                 onAbrirAdmin();
               }
             }}
-            className="text-blue-600 hover:text-blue-800 font-bold transition-colors"
+            className={
+              esAdmin
+                ? "text-blue-600 hover:text-blue-800 font-bold transition-colors"
+                : "text-slate-400 hover:text-slate-600 transition-colors"
+            }
           >
-            📋 Centro de Requerimientos & Presupuestos
+            {esAdmin
+              ? "📋 Centro de Requerimientos & Presupuestos"
+              : "🔒 Acceso Administrador"}
           </a>
+          {esAdmin && onCerrarSesionAdmin && (
+            <>
+              <span className="text-slate-300">•</span>
+              <button
+                type="button"
+                onClick={onCerrarSesionAdmin}
+                className="text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
+              >
+                Cerrar Sesión
+              </button>
+            </>
+          )}
         </div>
 
         <div className="text-slate-500 text-center md:text-right">

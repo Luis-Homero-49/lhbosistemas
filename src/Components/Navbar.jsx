@@ -4,6 +4,8 @@ export default function Navbar({
   onAbrirPresupuesto,
   onAbrirAdmin,
   onAbrirRedes,
+  onCerrarSesionAdmin,
+  esAdmin = false,
   cantidadPendientes = 0,
 }) {
   const [menuAbierto, setMenuAbierto] = useState(false);
@@ -86,33 +88,49 @@ export default function Navbar({
 
         {/* Botones de acción rápida */}
         <div className="hidden sm:flex items-center gap-2">
-          <a
-            href="/redes"
-            onClick={irARedes}
-            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl transition-all border bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200"
-            title="Administrar y publicar en Redes Sociales (Instagram, Facebook, LinkedIn, TikTok)"
-          >
-            <span>📱</span>
-            <span className="hidden lg:inline">Administrar Redes</span>
-          </a>
-          <a
-            href="/admin"
-            onClick={irAAdmin}
-            className={`inline-flex items-center gap-2 text-xs font-bold px-3.5 py-2.5 rounded-xl transition-all border ${
-              cantidadPendientes > 0
-                ? "bg-amber-50 hover:bg-amber-100 text-amber-950 border-amber-400 shadow-sm ring-2 ring-amber-400/30"
-                : "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
-            }`}
-            title="Abrir Bandeja de Requerimientos y Elaboración de Presupuestos"
-          >
-            <span>📋</span>
-            <span>Panel Presupuestos</span>
-            {cantidadPendientes > 0 && (
-              <span className="inline-flex items-center gap-1 bg-amber-500 text-slate-950 font-black text-[11px] px-2 py-0.5 rounded-full animate-pulse">
-                🔔 {cantidadPendientes} nuevo{cantidadPendientes > 1 ? "s" : ""}
-              </span>
-            )}
-          </a>
+          {esAdmin && (
+            <>
+              <a
+                href="/redes"
+                onClick={irARedes}
+                className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl transition-all border bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200"
+                title="Administrar y publicar en Redes Sociales (Instagram, Facebook, LinkedIn, TikTok)"
+              >
+                <span>📱</span>
+                <span className="hidden lg:inline">Administrar Redes</span>
+              </a>
+              <a
+                href="/admin"
+                onClick={irAAdmin}
+                className={`inline-flex items-center gap-2 text-xs font-bold px-3.5 py-2.5 rounded-xl transition-all border ${
+                  cantidadPendientes > 0
+                    ? "bg-amber-50 hover:bg-amber-100 text-amber-950 border-amber-400 shadow-sm ring-2 ring-amber-400/30"
+                    : "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
+                }`}
+                title="Abrir Bandeja de Requerimientos y Elaboración de Presupuestos"
+              >
+                <span>📋</span>
+                <span>Panel Presupuestos</span>
+                {cantidadPendientes > 0 && (
+                  <span className="inline-flex items-center gap-1 bg-amber-500 text-slate-950 font-black text-[11px] px-2 py-0.5 rounded-full animate-pulse">
+                    🔔 {cantidadPendientes} nuevo
+                    {cantidadPendientes > 1 ? "s" : ""}
+                  </span>
+                )}
+              </a>
+              {onCerrarSesionAdmin && (
+                <button
+                  type="button"
+                  onClick={onCerrarSesionAdmin}
+                  className="inline-flex items-center gap-1 text-xs font-bold px-3 py-2.5 rounded-xl transition-all border bg-rose-50 hover:bg-rose-100 text-rose-800 border-rose-200 cursor-pointer"
+                  title="Cerrar sesión de administrador"
+                >
+                  <span>🔒</span>
+                  <span className="hidden xl:inline">Salir Admin</span>
+                </button>
+              )}
+            </>
+          )}
           <a
             href="#contacto"
             className="bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-all shadow-md shadow-blue-600/20"
@@ -174,25 +192,42 @@ export default function Navbar({
             Consultar Mi Presupuesto
           </a>
           <div className="pt-2 flex flex-col gap-2">
-            <a
-              href="/redes"
-              onClick={irARedes}
-              className="w-full text-center bg-indigo-50 border border-indigo-200 text-indigo-900 text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-2"
-            >
-              <span>📱 Administrar Redes Sociales</span>
-            </a>
-            <a
-              href="/admin"
-              onClick={irAAdmin}
-              className="w-full text-center bg-slate-900 text-white text-sm font-semibold py-2.5 rounded-xl flex items-center justify-center gap-2"
-            >
-              <span>📋 Panel de Requerimientos y Presupuestos</span>
-              {cantidadPendientes > 0 && (
-                <span className="bg-amber-400 text-slate-950 text-xs font-black px-2 py-0.5 rounded-full">
-                  🔔 {cantidadPendientes} nuevo{cantidadPendientes > 1 ? "s" : ""}
-                </span>
-              )}
-            </a>
+            {esAdmin && (
+              <>
+                <a
+                  href="/redes"
+                  onClick={irARedes}
+                  className="w-full text-center bg-indigo-50 border border-indigo-200 text-indigo-900 text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-2"
+                >
+                  <span>📱 Administrar Redes Sociales</span>
+                </a>
+                <a
+                  href="/admin"
+                  onClick={irAAdmin}
+                  className="w-full text-center bg-slate-900 text-white text-sm font-semibold py-2.5 rounded-xl flex items-center justify-center gap-2"
+                >
+                  <span>📋 Panel de Requerimientos y Presupuestos</span>
+                  {cantidadPendientes > 0 && (
+                    <span className="bg-amber-400 text-slate-950 text-xs font-black px-2 py-0.5 rounded-full">
+                      🔔 {cantidadPendientes} nuevo
+                      {cantidadPendientes > 1 ? "s" : ""}
+                    </span>
+                  )}
+                </a>
+                {onCerrarSesionAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuAbierto(false);
+                      onCerrarSesionAdmin();
+                    }}
+                    className="w-full text-center bg-rose-50 border border-rose-200 text-rose-800 text-sm font-bold py-2.5 rounded-xl"
+                  >
+                    🔒 Cerrar Sesión de Administrador
+                  </button>
+                )}
+              </>
+            )}
             <a
               href="#contacto"
               onClick={() => setMenuAbierto(false)}
