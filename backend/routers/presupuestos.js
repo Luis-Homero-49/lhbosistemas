@@ -199,6 +199,9 @@ export async function inicializarBaseDeDatos() {
       await client.query(
         "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS plan_pago JSONB"
       );
+      await client.query(
+        "ALTER TABLE facturas_cobros ADD COLUMN IF NOT EXISTS detalle_cuotas JSONB"
+      );
 
       // Insertar presupuesto demo si la tabla está vacía
       const { rows } = await client.query(
@@ -660,6 +663,7 @@ export async function listarPanelAdmin() {
              c.nombre AS cliente_nombre,
              c.empresa,
              p.codigo AS presupuesto_codigo,
+             p.plan_pago AS plan_pago,
              COALESCE((SELECT SUM(monto_usd) FROM facturas_cobros f WHERE f.proyecto_id = pr.id AND f.estado = 'cobrado'), 0) AS total_cobrado_usd,
              COALESCE((SELECT SUM(monto_equivalente_usd) FROM gastos_proyecto g WHERE g.proyecto_id = pr.id), 0) AS total_gastos_usd
       FROM proyectos pr
@@ -667,6 +671,16 @@ export async function listarPanelAdmin() {
       JOIN presupuestos p ON pr.presupuesto_id = p.id
       ORDER BY pr.creado_en DESC
     `);
+
+    const facturasRes = await pgPool.query(`
+      SELECT * FROM facturas_cobros ORDER BY id DESC
+    `);
+    const todasFacturas = facturasRes.rows.map((f) => ({
+      ...f,
+      monto_usd: Number(f.monto_usd),
+      tasa_bcv: Number(f.tasa_bcv || 1),
+      monto_ves: Number(f.monto_ves || 0),
+    }));
 
     return {
       status: 200,
@@ -690,6 +704,7 @@ export async function listarPanelAdmin() {
             total_gastos_usd: gastos,
             ganancia_neta_usd: ganancia,
             margen_rentabilidad_porcentaje: margen,
+            facturas: todasFacturas.filter((f) => f.proyecto_id === pr.id),
           };
         }),
       },
@@ -752,11 +767,15 @@ export async function listarPanelAdmin() {
         cliente_nombre: cli.nombre || "Cliente",
         empresa: cli.empresa || null,
         presupuesto_codigo: pre.codigo || null,
+        plan_pago: pre.plan_pago || null,
         monto_acordado_usd: Number(pr.monto_acordado_usd),
         total_cobrado_usd: totalCobrado,
         total_gastos_usd: totalGastos,
         ganancia_neta_usd: ganancia,
         margen_rentabilidad_porcentaje: margen,
+        facturas: store.facturas_cobros
+          .filter((f) => f.proyecto_id === pr.id)
+          .sort((a, b) => b.id - a.id),
       };
     });
 
@@ -1380,8 +1399,8 @@ export async function registrarCobroProyecto(payload) {
   if (usarPostgres && pgPool) {
     const { rows } = await pgPool.query(
       `INSERT INTO facturas_cobros
-        (proyecto_id, numero_factura, concepto, monto_usd, moneda_pago, tasa_bcv, monto_ves, referencia_bancaria, fecha_pago, estado)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, CURRENT_DATE, $9)
+        (proyecto_id, numero_factura, concepto, monto_usd, moneda_pago, tasa_bcv, monto_ves, referencia_bancaria, detalle_cuotas, fecha_pago, estado)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_DATE, $10)
        RETURNING *`,
       [
         d.proyecto_id,
@@ -1392,6 +1411,7 @@ export async function registrarCobroProyecto(payload) {
         d.tasa_bcv,
         d.monto_ves,
         d.referencia_bancaria,
+        d.detalle_cuotas ? JSON.stringify(d.detalle_cuotas) : null,
         d.estado,
       ]
     );

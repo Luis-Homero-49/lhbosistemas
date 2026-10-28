@@ -200,6 +200,9 @@ export default function PanelGestionPresupuestos({
   const [formCobro, setFormCobro] = useState({
     proyecto_id: "",
     numero_factura: "",
+    tipo_aplicacion: "cuota_completa", // 'pago_inicial' | 'cuota_completa' | 'multiples_cuotas' | 'abono_parcial_cuota' | 'pago_total'
+    numero_cuota_inicio: "1",
+    cantidad_cuotas: "2",
     concepto: "",
     monto_usd: "",
     moneda_pago: "VES",
@@ -494,17 +497,153 @@ export default function PanelGestionPresupuestos({
     }
   };
 
+  const aplicarSugerenciaCobro = (
+    proyId,
+    tipoAplicacion,
+    numCuotaInicio = "1",
+    cantCuotas = "2"
+  ) => {
+    const proy = datos.proyectos.find((p) => p.id === Number(proyId));
+    if (!proy) return;
+
+    const pp = proy.plan_pago || null;
+    const montoCuotaRef =
+      pp && Number(pp.monto_cuota_usd) > 0
+        ? Number(pp.monto_cuota_usd)
+        : Number(proy.monto_acordado_usd || 0);
+    const totalCuotasPlan = pp?.numero_cuotas || 1;
+    const cuotaIni = Math.max(1, parseInt(numCuotaInicio, 10) || 1);
+    const nCuotas = Math.max(2, parseInt(cantCuotas, 10) || 2);
+    const cuotaFin = Math.min(totalCuotasPlan, cuotaIni + nCuotas - 1);
+
+    if (tipoAplicacion === "pago_inicial") {
+      const montoIni =
+        pp && Number(pp.monto_inicial_usd) > 0
+          ? Number(pp.monto_inicial_usd)
+          : Number(((proy.monto_acordado_usd || 0) * 0.5).toFixed(2));
+      setFormCobro((prev) => ({
+        ...prev,
+        proyecto_id: String(proyId),
+        tipo_aplicacion: tipoAplicacion,
+        concepto: `Pago Inicial / Anticipo (${pp?.porcentaje_inicial || 50}%)`,
+        monto_usd: String(montoIni),
+      }));
+      return;
+    }
+
+    if (tipoAplicacion === "cuota_completa") {
+      setFormCobro((prev) => ({
+        ...prev,
+        proyecto_id: String(proyId),
+        tipo_aplicacion: tipoAplicacion,
+        numero_cuota_inicio: String(cuotaIni),
+        cantidad_cuotas: "1",
+        concepto: `Pago completo de Cuota #${cuotaIni} de ${totalCuotasPlan}`,
+        monto_usd: String(montoCuotaRef),
+      }));
+      return;
+    }
+
+    if (tipoAplicacion === "multiples_cuotas") {
+      const montoMulti = Number((montoCuotaRef * nCuotas).toFixed(2));
+      setFormCobro((prev) => ({
+        ...prev,
+        proyecto_id: String(proyId),
+        tipo_aplicacion: tipoAplicacion,
+        numero_cuota_inicio: String(cuotaIni),
+        cantidad_cuotas: String(nCuotas),
+        concepto: `Pago conjunto de ${nCuotas} cuotas (Cuota #${cuotaIni} a Cuota #${cuotaFin})`,
+        monto_usd: String(montoMulti),
+      }));
+      return;
+    }
+
+    if (tipoAplicacion === "abono_parcial_cuota") {
+      const montoParcialSug = Number((montoCuotaRef / 2).toFixed(2));
+      setFormCobro((prev) => ({
+        ...prev,
+        proyecto_id: String(proyId),
+        tipo_aplicacion: tipoAplicacion,
+        numero_cuota_inicio: String(cuotaIni),
+        cantidad_cuotas: "1",
+        concepto: `Abono parcial a cuenta de la Cuota #${cuotaIni} (Valor cuota: ${formatearUsd(montoCuotaRef)})`,
+        monto_usd: String(montoParcialSug),
+      }));
+      return;
+    }
+
+    if (tipoAplicacion === "pago_total") {
+      const totalObjetivo =
+        pp && Number(pp.monto_total_financiado_usd) > 0
+          ? Number(pp.monto_total_financiado_usd)
+          : Number(proy.monto_acordado_usd || 0);
+      const saldoPendiente = Math.max(
+        0,
+        Number((totalObjetivo - Number(proy.total_cobrado_usd || 0)).toFixed(2))
+      );
+      setFormCobro((prev) => ({
+        ...prev,
+        proyecto_id: String(proyId),
+        tipo_aplicacion: tipoAplicacion,
+        concepto: "Cancelación total / Liquidación de saldo del proyecto",
+        monto_usd: String(saldoPendiente > 0 ? saldoPendiente : totalObjetivo),
+      }));
+    }
+  };
+
   const manejarRegistrarCobro = async (e) => {
     e.preventDefault();
     try {
+      const proy = datos.proyectos.find(
+        (p) => p.id === Number(formCobro.proyecto_id)
+      );
+      const pp = proy?.plan_pago || null;
+      const montoCuotaRef =
+        pp && Number(pp.monto_cuota_usd) > 0
+          ? Number(pp.monto_cuota_usd)
+          : Number(proy?.monto_acordado_usd || 0);
+      const montoPagadoUsd = Number(formCobro.monto_usd || 0);
+      const cuotaIni = Math.max(
+        1,
+        parseInt(formCobro.numero_cuota_inicio, 10) || 1
+      );
+      const cantCuotas =
+        formCobro.tipo_aplicacion === "multiples_cuotas"
+          ? Math.max(2, parseInt(formCobro.cantidad_cuotas, 10) || 2)
+          : 1;
+
+      const saldoCuotaRestante =
+        formCobro.tipo_aplicacion === "abono_parcial_cuota"
+          ? Math.max(0, Number((montoCuotaRef - montoPagadoUsd).toFixed(2)))
+          : 0;
+
+      const etiquetasTipo = {
+        pago_inicial: "Pago Inicial / Anticipo",
+        cuota_completa: `1 Cuota completa (Cuota #${cuotaIni})`,
+        multiples_cuotas: `Múltiples cuotas (${cantCuotas} cuotas desde #${cuotaIni})`,
+        abono_parcial_cuota: `Pago parcial de Cuota #${cuotaIni} (Restan ${formatearUsd(saldoCuotaRestante)})`,
+        pago_total: "Liquidación / Pago Total",
+      };
+
+      const detalleCuotas = {
+        tipo_aplicacion: formCobro.tipo_aplicacion,
+        etiqueta_aplicacion:
+          etiquetasTipo[formCobro.tipo_aplicacion] || "Cobro general",
+        numero_cuota_inicio: cuotaIni,
+        cantidad_cuotas: cantCuotas,
+        monto_cuota_referencia_usd: montoCuotaRef,
+        saldo_cuota_restante_usd: saldoCuotaRestante,
+      };
+
       const res = await fetch(`${API_BASE}/api/presupuestos/cobros`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formCobro,
           proyecto_id: Number(formCobro.proyecto_id),
-          monto_usd: Number(formCobro.monto_usd),
+          monto_usd: montoPagadoUsd,
           tasa_bcv: Number(formCobro.tasa_bcv || 1),
+          detalle_cuotas: detalleCuotas,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -521,7 +660,7 @@ export default function PanelGestionPresupuestos({
       await recargarDatos();
       setNotificacion({
         tipo: "exito",
-        texto: "Cobro registrado y balance P&L actualizado.",
+        texto: "Factura de cobro registrada y balance P&L actualizado.",
       });
     } catch (err) {
       setNotificacion({ tipo: "error", texto: err.message });
@@ -1961,7 +2100,7 @@ export default function PanelGestionPresupuestos({
                             </p>
                           </div>
 
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200/80 text-center">
+                           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-xl border border-slate-200/80 text-center">
                             <div>
                               <span className="text-[11px] text-slate-500 block">
                                 Acordado
@@ -1996,6 +2135,86 @@ export default function PanelGestionPresupuestos({
                               </span>
                             </div>
                           </div>
+
+                          {/* Resumen del Plan de Cuotas del Proyecto y Facturas registradas */}
+                          {proy.plan_pago &&
+                            (proy.plan_pago.modalidad === "partes" ||
+                              proy.plan_pago.modalidad === "ambas") && (
+                              <div className="bg-blue-50/70 border border-blue-200 rounded-xl p-3.5 text-xs text-slate-700 space-y-1">
+                                <span className="font-extrabold text-blue-800 block">
+                                  💳 Plan de Cuotas Acordado (
+                                  {proy.plan_pago.periodicidad}):
+                                </span>
+                                <p>
+                                  {proy.plan_pago.tiene_inicial
+                                    ? `Inicial: ${formatearUsd(proy.plan_pago.monto_inicial_usd)} (${proy.plan_pago.porcentaje_inicial}%) · `
+                                    : "Sin inicial · "}
+                                  <strong>
+                                    {proy.plan_pago.numero_cuotas} cuotas de{" "}
+                                    {formatearUsd(
+                                      proy.plan_pago.monto_cuota_usd
+                                    )}{" "}
+                                    USD
+                                  </strong>{" "}
+                                  · Total plan:{" "}
+                                  <strong>
+                                    {formatearUsd(
+                                      proy.plan_pago.monto_total_financiado_usd
+                                    )}{" "}
+                                    USD
+                                  </strong>
+                                </p>
+                              </div>
+                            )}
+
+                          {Array.isArray(proy.facturas) &&
+                            proy.facturas.length > 0 && (
+                              <div className="border-t border-slate-200 pt-3 space-y-2">
+                                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block">
+                                  🧾 Facturas / Cobros Registrados (
+                                  {proy.facturas.length}):
+                                </span>
+                                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                                  {proy.facturas.map((fac) => (
+                                    <div
+                                      key={fac.id}
+                                      className="bg-slate-50 border border-slate-200 rounded-lg p-2.5 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                                    >
+                                      <div>
+                                        <div className="flex flex-wrap items-center gap-1.5">
+                                          <span className="font-mono font-bold text-slate-900 bg-white border border-slate-200 px-2 py-0.5 rounded">
+                                            {fac.numero_factura}
+                                          </span>
+                                          {fac.detalle_cuotas
+                                            ?.etiqueta_aplicacion && (
+                                            <span className="bg-blue-100 text-blue-800 font-bold text-[11px] px-2 py-0.5 rounded-full">
+                                              {
+                                                fac.detalle_cuotas
+                                                  .etiqueta_aplicacion
+                                              }
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-slate-700 font-medium mt-1">
+                                          {fac.concepto}
+                                        </p>
+                                      </div>
+                                      <div className="sm:text-right shrink-0">
+                                        <span className="font-black text-emerald-700 block">
+                                          {formatearUsd(fac.monto_usd)} USD
+                                        </span>
+                                        {fac.moneda_pago === "VES" && (
+                                          <span className="text-[11px] text-slate-500">
+                                            Bs. {fac.monto_ves} (BCV:{" "}
+                                            {fac.tasa_bcv})
+                                          </span>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                         </div>
                       ))}
                     </div>
@@ -2006,32 +2225,194 @@ export default function PanelGestionPresupuestos({
                         onSubmit={manejarRegistrarCobro}
                         className="bg-white border border-slate-200 rounded-2xl p-6 space-y-4"
                       >
-                        <h3 className="text-sm font-extrabold text-slate-900">
-                          ➕ Registrar Cobro / Factura (Ingreso)
-                        </h3>
+                        <div>
+                          <h3 className="text-sm font-extrabold text-slate-900">
+                            ➕ Emitir / Registrar Factura de Cobro (Ingreso)
+                          </h3>
+                          <p className="text-[11px] text-slate-500 mt-0.5">
+                            Permite registrar pago inicial, 1 cuota completa,{" "}
+                            <strong>más de una cuota</strong> o el{" "}
+                            <strong>pago parcial (abono) de una cuota</strong>.
+                          </p>
+                        </div>
+
                         <div className="grid grid-cols-2 gap-3">
                           <select
                             required
                             value={formCobro.proyecto_id}
-                            onChange={(e) =>
+                            onChange={(e) => {
+                              const nuevoProyId = e.target.value;
                               setFormCobro((p) => ({
                                 ...p,
-                                proyecto_id: e.target.value,
-                              }))
-                            }
-                            className="col-span-2 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                                proyecto_id: nuevoProyId,
+                              }));
+                              if (nuevoProyId) {
+                                aplicarSugerenciaCobro(
+                                  nuevoProyId,
+                                  formCobro.tipo_aplicacion,
+                                  formCobro.numero_cuota_inicio,
+                                  formCobro.cantidad_cuotas
+                                );
+                              }
+                            }}
+                            className="col-span-2 bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold"
                           >
-                            <option value="">Seleccionar Proyecto...</option>
+                            <option value="">1. Seleccionar Proyecto...</option>
                             {datos.proyectos.map((pr) => (
                               <option key={pr.id} value={pr.id}>
-                                #{pr.id} — {pr.nombre}
+                                #{pr.id} — {pr.nombre} ({pr.cliente_nombre})
                               </option>
                             ))}
                           </select>
+
+                          {/* Selector de Modalidad de Facturación sobre las Cuotas */}
+                          <div className="col-span-2 bg-blue-50/60 border border-blue-200 rounded-xl p-3 space-y-3">
+                            <label className="block text-[11px] font-extrabold uppercase tracking-wider text-blue-900">
+                              2. Modalidad del Cobro / Aplicación a Cuotas
+                            </label>
+                            <select
+                              value={formCobro.tipo_aplicacion}
+                              onChange={(e) => {
+                                const nuevoTipo = e.target.value;
+                                setFormCobro((p) => ({
+                                  ...p,
+                                  tipo_aplicacion: nuevoTipo,
+                                }));
+                                if (formCobro.proyecto_id) {
+                                  aplicarSugerenciaCobro(
+                                    formCobro.proyecto_id,
+                                    nuevoTipo,
+                                    formCobro.numero_cuota_inicio,
+                                    formCobro.cantidad_cuotas
+                                  );
+                                }
+                              }}
+                              className="w-full bg-white border border-blue-300 rounded-lg px-3 py-2 text-xs font-bold text-slate-900"
+                            >
+                              <option value="cuota_completa">
+                                Pago de 1 Cuota Completa
+                              </option>
+                              <option value="multiples_cuotas">
+                                Pago de Más de 1 Cuota (Múltiples Cuotas Juntas)
+                              </option>
+                              <option value="abono_parcial_cuota">
+                                Pago Parcial / Abono a Cuenta de 1 Cuota
+                              </option>
+                              <option value="pago_inicial">
+                                Pago Inicial / Anticipo del Proyecto
+                              </option>
+                              <option value="pago_total">
+                                Liquidación Total del Saldo Restante
+                              </option>
+                            </select>
+
+                            {(formCobro.tipo_aplicacion === "cuota_completa" ||
+                              formCobro.tipo_aplicacion ===
+                                "multiples_cuotas" ||
+                              formCobro.tipo_aplicacion ===
+                                "abono_parcial_cuota") && (
+                              <div className="grid grid-cols-2 gap-2.5 pt-1">
+                                <div>
+                                  <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                                    {formCobro.tipo_aplicacion ===
+                                    "multiples_cuotas"
+                                      ? "Desde la Cuota Nro.:"
+                                      : "Corresponde a la Cuota Nro.:"}
+                                  </label>
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="36"
+                                    value={formCobro.numero_cuota_inicio}
+                                    onChange={(e) => {
+                                      const val = e.target.value;
+                                      setFormCobro((p) => ({
+                                        ...p,
+                                        numero_cuota_inicio: val,
+                                      }));
+                                      if (formCobro.proyecto_id) {
+                                        aplicarSugerenciaCobro(
+                                          formCobro.proyecto_id,
+                                          formCobro.tipo_aplicacion,
+                                          val,
+                                          formCobro.cantidad_cuotas
+                                        );
+                                      }
+                                    }}
+                                    className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold"
+                                  />
+                                </div>
+
+                                {formCobro.tipo_aplicacion ===
+                                  "multiples_cuotas" && (
+                                  <div>
+                                    <label className="block text-[11px] font-semibold text-slate-700 mb-1">
+                                      Cantidad de Cuotas a Pagar:
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min="2"
+                                      max="36"
+                                      value={formCobro.cantidad_cuotas}
+                                      onChange={(e) => {
+                                        const cant = e.target.value;
+                                        setFormCobro((p) => ({
+                                          ...p,
+                                          cantidad_cuotas: cant,
+                                        }));
+                                        if (formCobro.proyecto_id) {
+                                          aplicarSugerenciaCobro(
+                                            formCobro.proyecto_id,
+                                            formCobro.tipo_aplicacion,
+                                            formCobro.numero_cuota_inicio,
+                                            cant
+                                          );
+                                        }
+                                      }}
+                                      className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-bold"
+                                    />
+                                  </div>
+                                )}
+
+                                {formCobro.tipo_aplicacion ===
+                                  "abono_parcial_cuota" &&
+                                  (() => {
+                                    const proySel = datos.proyectos.find(
+                                      (p) =>
+                                        p.id === Number(formCobro.proyecto_id)
+                                    );
+                                    const valorCuota =
+                                      proySel?.plan_pago?.monto_cuota_usd || 0;
+                                    const abonoActual = Number(
+                                      formCobro.monto_usd || 0
+                                    );
+                                    const restaCuota = Math.max(
+                                      0,
+                                      Number(
+                                        (valorCuota - abonoActual).toFixed(2)
+                                      )
+                                    );
+                                    return valorCuota > 0 ? (
+                                      <div className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 flex flex-col justify-center">
+                                        <span className="text-[10px] text-amber-800">
+                                          Cuota completa:{" "}
+                                          {formatearUsd(valorCuota)}
+                                        </span>
+                                        <span className="text-xs font-extrabold text-amber-950">
+                                          Restará de la cuota:{" "}
+                                          {formatearUsd(restaCuota)}
+                                        </span>
+                                      </div>
+                                    ) : null;
+                                  })()}
+                              </div>
+                            )}
+                          </div>
+
                           <input
                             type="text"
                             required
-                            placeholder="Nro. Factura / Recibo"
+                            placeholder="Nro. Factura / Recibo (Ej. FAC-001)"
                             value={formCobro.numero_factura}
                             onChange={(e) =>
                               setFormCobro((p) => ({
@@ -2044,7 +2425,7 @@ export default function PanelGestionPresupuestos({
                           <input
                             type="text"
                             required
-                            placeholder="Concepto (Ej. Anticipo 50%)"
+                            placeholder="Concepto detallado de la factura"
                             value={formCobro.concepto}
                             onChange={(e) =>
                               setFormCobro((p) => ({
@@ -2058,7 +2439,7 @@ export default function PanelGestionPresupuestos({
                             type="number"
                             step="0.01"
                             required
-                            placeholder="Monto en USD"
+                            placeholder="Monto a cobrar en USD"
                             value={formCobro.monto_usd}
                             onChange={(e) =>
                               setFormCobro((p) => ({
@@ -2066,7 +2447,7 @@ export default function PanelGestionPresupuestos({
                                 monto_usd: e.target.value,
                               }))
                             }
-                            className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs"
+                            className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900"
                           />
                           <select
                             value={formCobro.moneda_pago}

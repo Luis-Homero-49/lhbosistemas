@@ -75,6 +75,7 @@ CREATE TABLE IF NOT EXISTS facturas_cobros (
     tasa_bcv NUMERIC(12, 4) DEFAULT 1.0000,
     monto_ves NUMERIC(14, 2), -- Calculado: monto_usd * tasa_bcv al momento del pago
     referencia_bancaria VARCHAR(100),
+    detalle_cuotas JSONB,
     fecha_emision DATE DEFAULT CURRENT_DATE,
     fecha_pago DATE,
     estado VARCHAR(20) DEFAULT 'pendiente' 

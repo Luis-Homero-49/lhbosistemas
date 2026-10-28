@@ -55,6 +55,10 @@ export function validarCobroRegistro(payload = {}) {
   const referencia_bancaria = payload.referencia_bancaria
     ? String(payload.referencia_bancaria).trim()
     : null;
+  const detalle_cuotas =
+    payload.detalle_cuotas && typeof payload.detalle_cuotas === "object"
+      ? payload.detalle_cuotas
+      : null;
   const estado = String(payload.estado || "cobrado").trim().toLowerCase();
 
   if (!Number.isInteger(proyecto_id) || proyecto_id <= 0) {
@@ -92,6 +96,7 @@ export function validarCobroRegistro(payload = {}) {
       tasa_bcv: Number(tasa_bcv.toFixed(4)),
       monto_ves,
       referencia_bancaria,
+      detalle_cuotas,
       estado: ["pendiente", "cobrado", "anulado"].includes(estado)
         ? estado
         : "cobrado",
