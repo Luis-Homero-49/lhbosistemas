@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import PanelRedesSociales from "./PanelRedesSociales";
 
 const API_BASE = import.meta.env.VITE_API_URL || "";
 
@@ -248,8 +249,17 @@ function calcularPlanPago(form) {
 export default function PanelGestionPresupuestos({
   onVolverInicio,
   onAbrirPresupuesto,
+  pestanaInicial = "requerimientos",
 }) {
-  const [pestanaActiva, setPestanaActiva] = useState("requerimientos"); // 'requerimientos' | 'elaborar' | 'presupuestos' | 'proyectos'
+  const [pestanaActiva, setPestanaActiva] = useState(
+    pestanaInicial || "requerimientos"
+  ); // 'requerimientos' | 'elaborar' | 'presupuestos' | 'proyectos' | 'redes'
+
+  useEffect(() => {
+    if (pestanaInicial) {
+      setPestanaActiva(pestanaInicial);
+    }
+  }, [pestanaInicial]);
   const [datos, setDatos] = useState({
     requerimientos: [],
     presupuestos: [],
@@ -948,9 +958,9 @@ export default function PanelGestionPresupuestos({
       </header>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-8 space-y-6">
-        {/* Guía visual del procedimiento de 3 pasos */}
+        {/* Guía visual del procedimiento */}
         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3.5">
             <button
               type="button"
               onClick={() => setPestanaActiva("requerimientos")}
@@ -1052,6 +1062,28 @@ export default function PanelGestionPresupuestos({
                 </div>
                 <p className="text-sm font-bold text-slate-900 truncate">
                   Proyectos Activos y P&L
+                </p>
+              </div>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPestanaActiva("redes")}
+              className={`flex items-center gap-3.5 p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                pestanaActiva === "redes"
+                  ? "bg-indigo-50 border-indigo-600 text-slate-900 shadow-xs"
+                  : "bg-slate-50/70 border-slate-200 text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              <span className="w-8 h-8 rounded-lg bg-gradient-to-tr from-pink-500 via-purple-600 to-indigo-600 text-white font-black text-sm flex items-center justify-center shrink-0">
+                📱
+              </span>
+              <div className="min-w-0 flex-1">
+                <span className="text-xs font-extrabold uppercase tracking-wider text-indigo-700 block">
+                  Paso 5 · Redes
+                </span>
+                <p className="text-sm font-bold text-slate-900 truncate">
+                  Instagram, Facebook y más
                 </p>
               </div>
             </button>
@@ -3248,6 +3280,13 @@ export default function PanelGestionPresupuestos({
                   </>
                 )}
               </div>
+            )}
+
+            {/* ============================================================== */}
+            {/* PASO 5: ADMINISTRACIÓN Y PUBLICACIONES DE REDES SOCIALES       */}
+            {/* ============================================================== */}
+            {pestanaActiva === "redes" && (
+              <PanelRedesSociales onVolverInicio={onVolverInicio} />
             )}
 
             {/* Barra de navegación inferior siempre disponible al final de cada sección */}

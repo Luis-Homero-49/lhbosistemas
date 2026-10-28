@@ -4,6 +4,7 @@ import Hero from "./Components/Hero";
 import Servicios from "./Components/Servicios";
 import Soluciones from "./Components/Soluciones";
 import Trayectoria from "./Components/Trayectoria";
+import SeccionRedesSociales from "./Components/SeccionRedesSociales";
 import Contacto from "./Components/Contacto";
 import Footer from "./Components/Footer";
 import VistaPresupuestoCliente from "./Components/VistaPresupuestoCliente";
@@ -11,6 +12,15 @@ import PanelGestionPresupuestos from "./Components/PanelGestionPresupuestos";
 
 function detectarRutaActiva() {
   const { pathname, search, hash } = window.location;
+
+  // 0a. Acceso directo al Gestor de Redes Sociales: /redes
+  if (/^\/redes\/?/i.test(pathname) || /^#\/redes\/?/i.test(hash)) {
+    return {
+      vista: "admin",
+      token: "",
+      pestanaAdmin: "redes",
+    };
+  }
 
   // 0. Panel Administrativo de Requerimientos y Presupuestos: /admin, /panel o /requerimientos
   if (
@@ -20,6 +30,7 @@ function detectarRutaActiva() {
     return {
       vista: "admin",
       token: "",
+      pestanaAdmin: "requerimientos",
     };
   }
 
@@ -72,6 +83,7 @@ export default function App() {
     nuevosRequerimientos: [],
     enNegociacion: [],
   });
+  const [datosRedes, setDatosRedes] = useState(null);
   const [ocultarBannerAlerta, setOcultarBannerAlerta] = useState(false);
 
   useEffect(() => {
@@ -92,22 +104,31 @@ export default function App() {
 
     async function verificarNuevosRequerimientos() {
       try {
-        const res = await fetch("/api/presupuestos/admin/resumen");
-        if (!res.ok) return;
-        const data = await res.json().catch(() => ({}));
-        if (cancelado) return;
-        const reqs = Array.isArray(data.requerimientos)
-          ? data.requerimientos
-          : [];
-        const pres = Array.isArray(data.presupuestos)
-          ? data.presupuestos
-          : [];
-        setResumenAlertas({
-          nuevosRequerimientos: reqs.filter(
-            (r) => r.estado === "nuevo" || r.estado === "en_elaboracion"
-          ),
-          enNegociacion: pres.filter((p) => p.estado === "en_negociacion"),
-        });
+        const [resPres, resRedes] = await Promise.all([
+          fetch("/api/presupuestos/admin/resumen").catch(() => null),
+          fetch("/api/redes-sociales").catch(() => null),
+        ]);
+
+        if (!cancelado && resPres && resPres.ok) {
+          const data = await resPres.json().catch(() => ({}));
+          const reqs = Array.isArray(data.requerimientos)
+            ? data.requerimientos
+            : [];
+          const pres = Array.isArray(data.presupuestos)
+            ? data.presupuestos
+            : [];
+          setResumenAlertas({
+            nuevosRequerimientos: reqs.filter(
+              (r) => r.estado === "nuevo" || r.estado === "en_elaboracion"
+            ),
+            enNegociacion: pres.filter((p) => p.estado === "en_negociacion"),
+          });
+        }
+
+        if (!cancelado && resRedes && resRedes.ok) {
+          const dataRedes = await resRedes.json().catch(() => null);
+          if (dataRedes) setDatosRedes(dataRedes);
+        }
       } catch {
         // Silencioso en caso de carga offline
       }
@@ -127,7 +148,13 @@ export default function App() {
 
   const abrirPanelAdmin = () => {
     window.history.pushState({}, "", "/admin");
-    setRutaActiva({ vista: "admin", token: "" });
+    setRutaActiva({ vista: "admin", token: "", pestanaAdmin: "requerimientos" });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const abrirGestorRedes = () => {
+    window.history.pushState({}, "", "/redes");
+    setRutaActiva({ vista: "admin", token: "", pestanaAdmin: "redes" });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
@@ -146,6 +173,7 @@ export default function App() {
       <PanelGestionPresupuestos
         onVolverInicio={volverAlSitioPrincipal}
         onAbrirPresupuesto={abrirVistaPresupuesto}
+        pestanaInicial={rutaActiva.pestanaAdmin || "requerimientos"}
       />
     );
   }
@@ -170,6 +198,7 @@ export default function App() {
       <Navbar
         onAbrirPresupuesto={abrirVistaPresupuesto}
         onAbrirAdmin={abrirPanelAdmin}
+        onAbrirRedes={abrirGestorRedes}
         cantidadPendientes={totalAlertas}
       />
 
@@ -227,6 +256,10 @@ export default function App() {
         <Servicios />
         <Soluciones />
         <Trayectoria />
+        <SeccionRedesSociales
+          datosRedes={datosRedes}
+          onAbrirGestorRedes={abrirGestorRedes}
+        />
         <Contacto onAbrirAdmin={abrirPanelAdmin} />
       </main>
       <Footer

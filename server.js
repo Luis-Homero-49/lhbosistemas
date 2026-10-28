@@ -15,6 +15,12 @@ import {
   listarPanelAdmin,
   enviarPresupuestoPorCorreo,
 } from "./backend/routers/presupuestos.js";
+import {
+  obtenerRedesSociales,
+  actualizarPerfilesRedes,
+  guardarPublicacionRedSocial,
+  eliminarPublicacionRedSocial,
+} from "./backend/routers/redes_sociales.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -560,6 +566,70 @@ const server = http.createServer(async (req, res) => {
       );
       return responderJson(res, 500, {
         detail: "Error interno al enviar el presupuesto por correo.",
+      });
+    }
+  }
+
+  // 11. Módulo de Administración de Redes Sociales (Instagram, Facebook, LinkedIn, TikTok, WhatsApp)
+  if (url.pathname === "/api/redes-sociales" && req.method === "GET") {
+    try {
+      const resultado = await obtenerRedesSociales();
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en GET /api/redes-sociales:", err);
+      return responderJson(res, 500, {
+        detail: "Error al cargar redes sociales.",
+      });
+    }
+  }
+
+  if (
+    url.pathname === "/api/redes-sociales/perfiles" &&
+    req.method === "POST"
+  ) {
+    try {
+      const body = await leerCuerpoJson(req);
+      const resultado = await actualizarPerfilesRedes(body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en POST /api/redes-sociales/perfiles:", err);
+      return responderJson(res, 500, {
+        detail: "Error al guardar perfiles de redes sociales.",
+      });
+    }
+  }
+
+  if (
+    url.pathname === "/api/redes-sociales/publicaciones" &&
+    req.method === "POST"
+  ) {
+    try {
+      const body = await leerCuerpoJson(req);
+      const resultado = await guardarPublicacionRedSocial(body);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error("Error en POST /api/redes-sociales/publicaciones:", err);
+      return responderJson(res, 500, {
+        detail: "Error al guardar la publicación.",
+      });
+    }
+  }
+
+  const matchEliminarPub = url.pathname.match(
+    /^\/api\/redes-sociales\/publicaciones\/(\d+)\/eliminar$/
+  );
+  if (matchEliminarPub && req.method === "POST") {
+    try {
+      const pubId = Number(matchEliminarPub[1]);
+      const resultado = await eliminarPublicacionRedSocial(pubId);
+      return responderJson(res, resultado.status, resultado.body);
+    } catch (err) {
+      console.error(
+        "Error en POST /api/redes-sociales/publicaciones/:id/eliminar:",
+        err
+      );
+      return responderJson(res, 500, {
+        detail: "Error al eliminar la publicación.",
       });
     }
   }

@@ -3,6 +3,7 @@ import { useState } from "react";
 export default function Navbar({
   onAbrirPresupuesto,
   onAbrirAdmin,
+  onAbrirRedes,
   cantidadPendientes = 0,
 }) {
   const [menuAbierto, setMenuAbierto] = useState(false);
@@ -11,6 +12,7 @@ export default function Navbar({
     { nombre: "Servicios", href: "#servicios" },
     { nombre: "Ejemplos por Rubro", href: "#soluciones" },
     { nombre: "Trayectoria", href: "#trayectoria" },
+    { nombre: "Redes", href: "#redes-sociales" },
     { nombre: "Contacto", href: "#contacto" },
   ];
 
@@ -31,6 +33,16 @@ export default function Navbar({
       onAbrirAdmin();
     } else {
       window.location.href = "/admin";
+    }
+  };
+
+  const irARedes = (e) => {
+    e.preventDefault();
+    setMenuAbierto(false);
+    if (onAbrirRedes) {
+      onAbrirRedes();
+    } else {
+      window.location.href = "/redes";
     }
   };
 
@@ -73,7 +85,16 @@ export default function Navbar({
         </div>
 
         {/* Botones de acción rápida */}
-        <div className="hidden sm:flex items-center gap-2.5">
+        <div className="hidden sm:flex items-center gap-2">
+          <a
+            href="/redes"
+            onClick={irARedes}
+            className="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-2.5 rounded-xl transition-all border bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200"
+            title="Administrar y publicar en Redes Sociales (Instagram, Facebook, LinkedIn, TikTok)"
+          >
+            <span>📱</span>
+            <span className="hidden lg:inline">Administrar Redes</span>
+          </a>
           <a
             href="/admin"
             onClick={irAAdmin}
@@ -153,6 +174,13 @@ export default function Navbar({
             Consultar Mi Presupuesto
           </a>
           <div className="pt-2 flex flex-col gap-2">
+            <a
+              href="/redes"
+              onClick={irARedes}
+              className="w-full text-center bg-indigo-50 border border-indigo-200 text-indigo-900 text-sm font-bold py-2.5 rounded-xl flex items-center justify-center gap-2"
+            >
+              <span>📱 Administrar Redes Sociales</span>
+            </a>
             <a
               href="/admin"
               onClick={irAAdmin}
