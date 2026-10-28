@@ -597,9 +597,26 @@ export default function VistaPresupuestoCliente({ tokenInicial, onVolverInicio }
                                         </strong>
                                       </span>
                                     </div>
-                                    <span className="font-black text-slate-900">
-                                      {formatearUsd(cuota.monto_cuota_usd)} USD
-                                    </span>
+                                    <div className="sm:text-right">
+                                      {presupuesto.plan_pago.con_intereses &&
+                                        cuota.saldo_deudor_usd !==
+                                          undefined && (
+                                          <span className="text-[11px] text-slate-500 mr-2 block sm:inline">
+                                            (Saldo deudor:{" "}
+                                            {formatearUsd(
+                                              cuota.saldo_deudor_usd
+                                            )}{" "}
+                                            → Capital:{" "}
+                                            {formatearUsd(cuota.capital_usd)} +
+                                            Interés:{" "}
+                                            {formatearUsd(cuota.interes_usd)})
+                                          </span>
+                                        )}
+                                      <span className="font-black text-slate-900">
+                                        {formatearUsd(cuota.monto_cuota_usd)}{" "}
+                                        USD
+                                      </span>
+                                    </div>
                                   </div>
                                 )
                               )}

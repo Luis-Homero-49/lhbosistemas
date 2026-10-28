@@ -140,47 +140,87 @@ function calcularPlanPago(form) {
   const porcentajeInteres = conIntereses
     ? Math.max(0, Number(form.porcentaje_interes || 0))
     : 0;
-  const tipoInteres = form.tipo_interes || "sobre_saldo";
+  const tipoInteres = form.tipo_interes || "saldo_deudor";
 
-  const montoInteres = conIntereses
-    ? tipoInteres === "por_cuota"
-      ? Number(
-          (saldoFinanciar * (porcentajeInteres / 100) * numeroCuotas).toFixed(2)
-        )
-      : Number((saldoFinanciar * (porcentajeInteres / 100)).toFixed(2))
-    : 0;
-
-  const totalEnCuotas = Number((saldoFinanciar + montoInteres).toFixed(2));
-  const montoCuota =
-    numeroCuotas > 0 ? Number((totalEnCuotas / numeroCuotas).toFixed(2)) : 0;
-  const montoTotalFinanciado = Number(
-    (montoInicial + totalEnCuotas).toFixed(2)
-  );
-
-  // Construir cronograma detallado de cada pago parcial con su fecha de vencimiento
+  // Construir cronograma detallado de cada pago parcial con su saldo deudor, capital, interés y fecha de vencimiento
   const cronogramaCuotas = [];
-  let acumuladoCuotas = 0;
-  const capitalPorCuota =
+  let capitalAcumulado = 0;
+  let sumaIntereses = 0;
+  const capitalBasePorCuota =
     numeroCuotas > 0 ? Number((saldoFinanciar / numeroCuotas).toFixed(2)) : 0;
-  const interesPorCuota =
-    numeroCuotas > 0 ? Number((montoInteres / numeroCuotas).toFixed(2)) : 0;
 
   for (let i = 1; i <= numeroCuotas; i++) {
     const esUltima = i === numeroCuotas;
-    const valorCuotaActual = esUltima
-      ? Math.max(0, Number((totalEnCuotas - acumuladoCuotas).toFixed(2)))
-      : montoCuota;
-    acumuladoCuotas = Number((acumuladoCuotas + valorCuotaActual).toFixed(2));
+    const saldoDeudorActual = Math.max(
+      0,
+      Number((saldoFinanciar - capitalAcumulado).toFixed(2))
+    );
+    const capitalCuota = esUltima
+      ? saldoDeudorActual
+      : capitalBasePorCuota;
+
+    let interesCuota = 0;
+    if (conIntereses && porcentajeInteres > 0) {
+      if (
+        tipoInteres === "saldo_deudor" ||
+        tipoInteres === "saldo_deudor_fijo"
+      ) {
+        // Interés calculado estrictamente sobre el saldo deudor de este período
+        interesCuota = Number(
+          (saldoDeudorActual * (porcentajeInteres / 100)).toFixed(2)
+        );
+      } else if (tipoInteres === "por_cuota") {
+        interesCuota = Number(
+          (saldoFinanciar * (porcentajeInteres / 100)).toFixed(2)
+        );
+      } else {
+        // 'sobre_saldo' (global único dividido entre las cuotas)
+        const interesGlobal = Number(
+          (saldoFinanciar * (porcentajeInteres / 100)).toFixed(2)
+        );
+        interesCuota = Number((interesGlobal / numeroCuotas).toFixed(2));
+      }
+    }
+
+    capitalAcumulado = Number((capitalAcumulado + capitalCuota).toFixed(2));
+    sumaIntereses = Number((sumaIntereses + interesCuota).toFixed(2));
 
     cronogramaCuotas.push({
       numero: i,
       concepto: `Pago Parcial / Cuota #${i} de ${numeroCuotas}`,
       fecha_vencimiento: calcularFechaCuota(fechaInicioPagos, periodicidad, i),
-      capital_usd: capitalPorCuota,
-      interes_usd: interesPorCuota,
-      monto_cuota_usd: valorCuotaActual,
+      saldo_deudor_usd: saldoDeudorActual,
+      capital_usd: capitalCuota,
+      interes_usd: interesCuota,
+      monto_cuota_usd: Number((capitalCuota + interesCuota).toFixed(2)),
     });
   }
+
+  const montoInteres = Number(sumaIntereses.toFixed(2));
+  const totalEnCuotas = Number((saldoFinanciar + montoInteres).toFixed(2));
+  const montoCuotaPromedio =
+    numeroCuotas > 0 ? Number((totalEnCuotas / numeroCuotas).toFixed(2)) : 0;
+
+  // Si eligió cuotas iguales sobre saldo deudor ('saldo_deudor_fijo'), nivelamos el monto a pagar en cada cuota
+  if (conIntereses && tipoInteres === "saldo_deudor_fijo") {
+    let acumNivelado = 0;
+    for (let i = 0; i < cronogramaCuotas.length; i++) {
+      const esUlt = i === cronogramaCuotas.length - 1;
+      const cuotaNiv = esUlt
+        ? Math.max(0, Number((totalEnCuotas - acumNivelado).toFixed(2)))
+        : montoCuotaPromedio;
+      acumNivelado = Number((acumNivelado + cuotaNiv).toFixed(2));
+      cronogramaCuotas[i].monto_cuota_usd = cuotaNiv;
+    }
+  }
+
+  const montoCuota =
+    cronogramaCuotas.length > 0
+      ? cronogramaCuotas[0].monto_cuota_usd
+      : montoCuotaPromedio;
+  const montoTotalFinanciado = Number(
+    (montoInicial + totalEnCuotas).toFixed(2)
+  );
 
   return {
     modalidad, // 'contado' | 'partes' | 'ambas'
@@ -249,7 +289,7 @@ export default function PanelGestionPresupuestos({
     periodicidad: "Quincenal (cada 15 días)",
     con_intereses: false,
     porcentaje_interes: "5",
-    tipo_interes: "sobre_saldo",
+    tipo_interes: "saldo_deudor",
     porcentaje_mora: "5",
     dias_gracia_mora: "5",
     penalizacion_mora: generarTextoPenalizacion(5, 5),
@@ -367,7 +407,7 @@ export default function PanelGestionPresupuestos({
       periodicidad: pp.periodicidad || "Quincenal (cada 15 días)",
       con_intereses: Boolean(pp.con_intereses),
       porcentaje_interes: String(pp.porcentaje_interes || 5),
-      tipo_interes: pp.tipo_interes || "sobre_saldo",
+      tipo_interes: pp.tipo_interes || "saldo_deudor",
       porcentaje_mora: String(pp.porcentaje_mora || 5),
       dias_gracia_mora: String(pp.dias_gracia_mora || 5),
       penalizacion_mora:
@@ -1940,11 +1980,20 @@ export default function PanelGestionPresupuestos({
                                         }
                                         className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold"
                                       >
+                                        <option value="saldo_deudor">
+                                          Sobre saldo deudor (Cuota decreciente
+                                          según baja la deuda)
+                                        </option>
+                                        <option value="saldo_deudor_fijo">
+                                          Sobre saldo deudor (Distribuido en
+                                          cuotas iguales)
+                                        </option>
                                         <option value="sobre_saldo">
-                                          Global sobre el saldo financiado
+                                          Recargo único global sobre el saldo
+                                          financiado
                                         </option>
                                         <option value="por_cuota">
-                                          Por cada período / cuota
+                                          Interés fijo por cada período / cuota
                                         </option>
                                       </select>
                                     </div>
@@ -2371,8 +2420,12 @@ export default function PanelGestionPresupuestos({
                                           </div>
                                           <div className="sm:text-right">
                                             {planPrevio.con_intereses && (
-                                              <span className="text-[11px] text-slate-500 mr-2">
-                                                (Capital:{" "}
+                                              <span className="text-[11px] text-slate-500 mr-2 block sm:inline">
+                                                (Saldo deudor:{" "}
+                                                {formatearUsd(
+                                                  cuota.saldo_deudor_usd
+                                                )}{" "}
+                                                → Capital:{" "}
                                                 {formatearUsd(
                                                   cuota.capital_usd
                                                 )}{" "}
