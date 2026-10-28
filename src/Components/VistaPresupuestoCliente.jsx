@@ -537,6 +537,76 @@ export default function VistaPresupuestoCliente({ tokenInicial, onVolverInicio }
                         </div>
                       </div>
 
+                      {/* Cronograma detallado de cada pago parcial con su fecha de vencimiento */}
+                      {Array.isArray(
+                        presupuesto.plan_pago.cronograma_cuotas
+                      ) &&
+                        presupuesto.plan_pago.cronograma_cuotas.length > 0 && (
+                          <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                            <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 text-xs font-extrabold text-slate-700">
+                              📅 Cronograma de Pagos Parciales y Fechas de
+                              Vencimiento
+                            </div>
+                            <div className="divide-y divide-slate-200 text-xs sm:text-sm">
+                              {presupuesto.plan_pago.tiene_inicial && (
+                                <div className="px-4 py-3 flex items-center justify-between bg-emerald-50/50">
+                                  <div>
+                                    <span className="font-extrabold text-emerald-900">
+                                      Pago Inicial (Anticipo{" "}
+                                      {
+                                        presupuesto.plan_pago
+                                          .porcentaje_inicial
+                                      }
+                                      %)
+                                    </span>
+                                    {presupuesto.plan_pago
+                                      .fecha_inicio_pagos && (
+                                      <span className="text-slate-600 ml-2">
+                                        · Fecha:{" "}
+                                        {formatearFecha(
+                                          presupuesto.plan_pago
+                                            .fecha_inicio_pagos
+                                        )}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span className="font-black text-emerald-800">
+                                    {formatearUsd(
+                                      presupuesto.plan_pago.monto_inicial_usd
+                                    )}{" "}
+                                    USD
+                                  </span>
+                                </div>
+                              )}
+                              {presupuesto.plan_pago.cronograma_cuotas.map(
+                                (cuota) => (
+                                  <div
+                                    key={cuota.numero}
+                                    className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1"
+                                  >
+                                    <div>
+                                      <span className="font-bold text-slate-900">
+                                        {cuota.concepto}
+                                      </span>
+                                      <span className="text-slate-600 ml-2">
+                                        · Vencimiento:{" "}
+                                        <strong className="text-blue-700">
+                                          {formatearFecha(
+                                            cuota.fecha_vencimiento
+                                          )}
+                                        </strong>
+                                      </span>
+                                    </div>
+                                    <span className="font-black text-slate-900">
+                                      {formatearUsd(cuota.monto_cuota_usd)} USD
+                                    </span>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                       {presupuesto.plan_pago.penalizacion_mora && (
                         <div className="bg-amber-50/90 border border-amber-200/90 rounded-xl p-4 text-xs text-amber-950 leading-relaxed">
                           <strong className="font-extrabold uppercase tracking-wider block mb-1 text-amber-900">

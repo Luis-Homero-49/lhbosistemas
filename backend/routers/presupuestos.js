@@ -859,17 +859,29 @@ export async function enviarPresupuestoPorCorreo(presupuestoId, payload = {}) {
   const tienePlanPartes =
     pp && (pp.modalidad === "partes" || pp.modalidad === "ambas");
 
+  const lineasCronogramaTexto =
+    tienePlanPartes && Array.isArray(pp.cronograma_cuotas)
+      ? [
+          "Cronograma detallado de pagos parciales y vencimientos:",
+          ...pp.cronograma_cuotas.map(
+            (c) =>
+              `  • Cuota #${c.numero}: ${fmtUsd(c.monto_cuota_usd)} USD — Vence: ${c.fecha_vencimiento}`
+          ),
+        ]
+      : [];
+
   const lineasPlanTexto = tienePlanPartes
     ? [
         "",
         "Modalidad de Pago por Partes / Financiamiento disponible:",
         pp.tiene_inicial
-          ? `- Pago Inicial (Anticipo ${pp.porcentaje_inicial || 0}%): ${fmtUsd(pp.monto_inicial_usd)} USD`
+          ? `- Pago Inicial (Anticipo ${pp.porcentaje_inicial || 0}%): ${fmtUsd(pp.monto_inicial_usd)} USD${pp.fecha_inicio_pagos ? ` (Fecha: ${pp.fecha_inicio_pagos})` : ""}`
           : "- Pago Inicial: Sin pago inicial ($0.00 USD)",
         `- Pagos Parciales: ${pp.numero_cuotas} cuota(s) con periodicidad ${pp.periodicidad} de ${fmtUsd(pp.monto_cuota_usd)} USD cada una`,
         pp.con_intereses
           ? `- Financiamiento: Incluye ${pp.porcentaje_interes}% de interés (${fmtUsd(pp.monto_interes_usd)} USD) — Total con financiamiento: ${fmtUsd(pp.monto_total_financiado_usd)} USD`
           : "- Financiamiento: Sin intereses (0%)",
+        ...lineasCronogramaTexto,
         pp.penalizacion_mora
           ? `- Condición por mora / vencimiento: ${pp.penalizacion_mora}`
           : null,
@@ -1504,6 +1516,9 @@ export async function crearPresupuesto(payload = {}) {
   const requerimientoId = payload.requerimiento_id
     ? Number(payload.requerimiento_id)
     : null;
+  const presupuestoIdExistente = payload.presupuesto_id
+    ? Number(payload.presupuesto_id)
+    : null;
 
   if (
     !nombreCliente ||
@@ -1540,30 +1555,59 @@ export async function crearPresupuesto(payload = {}) {
       );
       const clienteId = cliRes.rows[0].id;
 
-      const countRes = await client.query(
-        "SELECT COUNT(*)::int AS total FROM presupuestos"
-      );
-      const consecutivo = String(countRes.rows[0].total + 1).padStart(3, "0");
-      const codigo = payload.codigo || `PRE-${anio}-${consecutivo}`;
+      let presupuestoCreado = null;
 
-      const preRes = await client.query(
-        `INSERT INTO presupuestos
-          (cliente_id, codigo, titulo, alcance, monto_total_usd, plan_pago, token_acceso, estado, fecha_vencimiento)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendiente', $8)
-         RETURNING *`,
-        [
-          clienteId,
-          codigo,
-          titulo,
-          alcance,
-          Number(montoTotalUsd.toFixed(2)),
-          planPago ? JSON.stringify(planPago) : null,
-          tokenAcceso,
-          fechaVencimiento,
-        ]
-      );
+      if (presupuestoIdExistente) {
+        const updRes = await client.query(
+          `UPDATE presupuestos
+           SET cliente_id = $1,
+               titulo = $2,
+               alcance = $3,
+               monto_total_usd = $4,
+               plan_pago = $5,
+               fecha_vencimiento = $6,
+               estado = 'pendiente',
+               actualizado_en = CURRENT_TIMESTAMP
+           WHERE id = $7
+           RETURNING *`,
+          [
+            clienteId,
+            titulo,
+            alcance,
+            Number(montoTotalUsd.toFixed(2)),
+            planPago ? JSON.stringify(planPago) : null,
+            fechaVencimiento,
+            presupuestoIdExistente,
+          ]
+        );
+        presupuestoCreado = updRes.rows[0] || null;
+      }
 
-      const presupuestoCreado = preRes.rows[0];
+      if (!presupuestoCreado) {
+        const countRes = await client.query(
+          "SELECT COUNT(*)::int AS total FROM presupuestos"
+        );
+        const consecutivo = String(countRes.rows[0].total + 1).padStart(3, "0");
+        const codigo = payload.codigo || `PRE-${anio}-${consecutivo}`;
+
+        const preRes = await client.query(
+          `INSERT INTO presupuestos
+            (cliente_id, codigo, titulo, alcance, monto_total_usd, plan_pago, token_acceso, estado, fecha_vencimiento)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendiente', $8)
+           RETURNING *`,
+          [
+            clienteId,
+            codigo,
+            titulo,
+            alcance,
+            Number(montoTotalUsd.toFixed(2)),
+            planPago ? JSON.stringify(planPago) : null,
+            tokenAcceso,
+            fechaVencimiento,
+          ]
+        );
+        presupuestoCreado = preRes.rows[0];
+      }
 
       if (requerimientoId) {
         await client.query(
@@ -1576,7 +1620,7 @@ export async function crearPresupuesto(payload = {}) {
 
       await client.query("COMMIT");
       return {
-        status: 201,
+        status: presupuestoIdExistente ? 200 : 201,
         body: {
           ...presupuestoCreado,
           monto_total_usd: Number(presupuestoCreado.monto_total_usd),
@@ -1585,7 +1629,7 @@ export async function crearPresupuesto(payload = {}) {
           cliente_email: emailCliente,
           cliente_telefono: telefonoCliente,
           empresa: empresaCliente,
-          url_cliente: `/presupuesto/${tokenAcceso}`,
+          url_cliente: `/presupuesto/${presupuestoCreado.token_acceso}`,
         },
       };
     } catch (err) {
@@ -1618,34 +1662,48 @@ export async function crearPresupuesto(payload = {}) {
     if (telefonoCliente) cliente.telefono = telefonoCliente;
   }
 
-  const nuevoPresupuestoId =
-    store.presupuestos.reduce((max, p) => Math.max(max, p.id), 0) + 1;
-  const consecutivo = String(nuevoPresupuestoId).padStart(3, "0");
-  const codigo = payload.codigo || `PRE-${anio}-${consecutivo}`;
+  let presupuestoGuardar = presupuestoIdExistente
+    ? store.presupuestos.find((p) => p.id === presupuestoIdExistente)
+    : null;
 
-  const nuevoPresupuesto = {
-    id: nuevoPresupuestoId,
-    cliente_id: cliente.id,
-    codigo,
-    titulo,
-    alcance,
-    monto_total_usd: Number(montoTotalUsd.toFixed(2)),
-    plan_pago: planPago,
-    token_acceso: tokenAcceso,
-    estado: "pendiente",
-    comentarios_cliente: null,
-    fecha_vencimiento: fechaVencimiento,
-    creado_en: new Date().toISOString(),
-    actualizado_en: new Date().toISOString(),
-  };
+  if (presupuestoGuardar) {
+    presupuestoGuardar.cliente_id = cliente.id;
+    presupuestoGuardar.titulo = titulo;
+    presupuestoGuardar.alcance = alcance;
+    presupuestoGuardar.monto_total_usd = Number(montoTotalUsd.toFixed(2));
+    presupuestoGuardar.plan_pago = planPago;
+    presupuestoGuardar.estado = "pendiente";
+    presupuestoGuardar.fecha_vencimiento = fechaVencimiento;
+    presupuestoGuardar.actualizado_en = new Date().toISOString();
+  } else {
+    const nuevoPresupuestoId =
+      store.presupuestos.reduce((max, p) => Math.max(max, p.id), 0) + 1;
+    const consecutivo = String(nuevoPresupuestoId).padStart(3, "0");
+    const codigo = payload.codigo || `PRE-${anio}-${consecutivo}`;
 
-  store.presupuestos.push(nuevoPresupuesto);
+    presupuestoGuardar = {
+      id: nuevoPresupuestoId,
+      cliente_id: cliente.id,
+      codigo,
+      titulo,
+      alcance,
+      monto_total_usd: Number(montoTotalUsd.toFixed(2)),
+      plan_pago: planPago,
+      token_acceso: tokenAcceso,
+      estado: "pendiente",
+      comentarios_cliente: null,
+      fecha_vencimiento: fechaVencimiento,
+      creado_en: new Date().toISOString(),
+      actualizado_en: new Date().toISOString(),
+    };
+    store.presupuestos.push(presupuestoGuardar);
+  }
 
   if (requerimientoId) {
     const reqItem = store.requerimientos.find((r) => r.id === requerimientoId);
     if (reqItem) {
       reqItem.estado = "cotizado";
-      reqItem.presupuesto_id = nuevoPresupuesto.id;
+      reqItem.presupuesto_id = presupuestoGuardar.id;
       reqItem.cliente_id = cliente.id;
       reqItem.actualizado_en = new Date().toISOString();
     }
@@ -1654,14 +1712,14 @@ export async function crearPresupuesto(payload = {}) {
   guardarStoreLocal(store);
 
   return {
-    status: 201,
+    status: presupuestoIdExistente ? 200 : 201,
     body: {
-      ...nuevoPresupuesto,
+      ...presupuestoGuardar,
       cliente_nombre: nombreCliente,
       cliente_email: emailCliente,
       cliente_telefono: telefonoCliente,
       empresa: empresaCliente,
-      url_cliente: `/presupuesto/${tokenAcceso}`,
+      url_cliente: `/presupuesto/${presupuestoGuardar.token_acceso}`,
     },
   };
 }

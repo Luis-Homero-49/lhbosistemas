@@ -77,6 +77,44 @@ function limpiarTelefonoWhatsApp(telefono = "") {
   return soloDigitos;
 }
 
+function obtenerFechaHoyIso() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function formatearFechaCorta(fechaStr) {
+  if (!fechaStr) return "Por definir";
+  const f = new Date(
+    fechaStr.includes("T") ? fechaStr : `${fechaStr}T00:00:00`
+  );
+  if (Number.isNaN(f.getTime())) return fechaStr;
+  return f.toLocaleDateString("es-VE", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function calcularFechaCuota(fechaBaseStr, periodicidad = "", indiceCuota = 1) {
+  const base = fechaBaseStr ? new Date(`${fechaBaseStr}T00:00:00`) : new Date();
+  if (Number.isNaN(base.getTime())) return obtenerFechaHoyIso();
+  const d = new Date(base.getTime());
+  const per = String(periodicidad).toLowerCase();
+
+  if (per.includes("semanal")) {
+    d.setDate(d.getDate() + 7 * indiceCuota);
+  } else if (per.includes("quincenal") || per.includes("hito")) {
+    d.setDate(d.getDate() + 15 * indiceCuota);
+  } else if (per.includes("bimestral")) {
+    d.setMonth(d.getMonth() + 2 * indiceCuota);
+  } else if (per.includes("trimestral")) {
+    d.setMonth(d.getMonth() + 3 * indiceCuota);
+  } else {
+    // Mensual por defecto
+    d.setMonth(d.getMonth() + 1 * indiceCuota);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
 function generarTextoPenalizacion(porcentajeMora = 5, diasGracia = 5) {
   return `En caso de incumplimiento en la fecha de vencimiento de cualquiera de los pagos parciales acordados, tras un período de gracia de ${diasGracia} días continuos se aplicará un recargo administrativo por mora del ${porcentajeMora}% sobre el monto de la cuota vencida. De mantenerse el retraso, LHBO Sistemas podrá pausar temporalmente el cronograma de desarrollo, soporte técnico o acceso al sistema hasta la total regularización del saldo vencido.`;
 }
@@ -97,6 +135,7 @@ function calcularPlanPago(form) {
   );
   const numeroCuotas = Math.max(1, parseInt(form.numero_cuotas, 10) || 1);
   const periodicidad = form.periodicidad || "Mensual (cada 30 días)";
+  const fechaInicioPagos = form.fecha_inicio_pagos || obtenerFechaHoyIso();
   const conIntereses = Boolean(form.con_intereses);
   const porcentajeInteres = conIntereses
     ? Math.max(0, Number(form.porcentaje_interes || 0))
@@ -118,12 +157,38 @@ function calcularPlanPago(form) {
     (montoInicial + totalEnCuotas).toFixed(2)
   );
 
+  // Construir cronograma detallado de cada pago parcial con su fecha de vencimiento
+  const cronogramaCuotas = [];
+  let acumuladoCuotas = 0;
+  const capitalPorCuota =
+    numeroCuotas > 0 ? Number((saldoFinanciar / numeroCuotas).toFixed(2)) : 0;
+  const interesPorCuota =
+    numeroCuotas > 0 ? Number((montoInteres / numeroCuotas).toFixed(2)) : 0;
+
+  for (let i = 1; i <= numeroCuotas; i++) {
+    const esUltima = i === numeroCuotas;
+    const valorCuotaActual = esUltima
+      ? Math.max(0, Number((totalEnCuotas - acumuladoCuotas).toFixed(2)))
+      : montoCuota;
+    acumuladoCuotas = Number((acumuladoCuotas + valorCuotaActual).toFixed(2));
+
+    cronogramaCuotas.push({
+      numero: i,
+      concepto: `Pago Parcial / Cuota #${i} de ${numeroCuotas}`,
+      fecha_vencimiento: calcularFechaCuota(fechaInicioPagos, periodicidad, i),
+      capital_usd: capitalPorCuota,
+      interes_usd: interesPorCuota,
+      monto_cuota_usd: valorCuotaActual,
+    });
+  }
+
   return {
     modalidad, // 'contado' | 'partes' | 'ambas'
     monto_base_usd: Number(montoBase.toFixed(2)),
     tiene_inicial: tieneInicial,
     porcentaje_inicial: pctInicial,
     monto_inicial_usd: montoInicial,
+    fecha_inicio_pagos: fechaInicioPagos,
     saldo_financiar_usd: saldoFinanciar,
     numero_cuotas: numeroCuotas,
     periodicidad,
@@ -133,6 +198,7 @@ function calcularPlanPago(form) {
     monto_interes_usd: montoInteres,
     monto_cuota_usd: montoCuota,
     monto_total_financiado_usd: montoTotalFinanciado,
+    cronograma_cuotas: cronogramaCuotas,
     porcentaje_mora: Number(form.porcentaje_mora || 5),
     dias_gracia_mora: Number(form.dias_gracia_mora || 5),
     penalizacion_mora: String(form.penalizacion_mora || "").trim(),
@@ -161,6 +227,10 @@ export default function PanelGestionPresupuestos({
   const [presupuestoParaEnviar, setPresupuestoParaEnviar] = useState(null);
   const [enviandoCorreoId, setEnviandoCorreoId] = useState(null);
 
+  // Control de Vista Previa del Presupuesto Completado y Reescritura de versión
+  const [mostrarVistaPrevia, setMostrarVistaPrevia] = useState(false);
+  const [presupuestoEditandoId, setPresupuestoEditandoId] = useState(null);
+
   // Formulario de Elaboración de Presupuesto
   const [formPresupuesto, setFormPresupuesto] = useState({
     cliente_nombre: "",
@@ -171,6 +241,7 @@ export default function PanelGestionPresupuestos({
     alcance: "",
     monto_total_usd: "",
     fecha_vencimiento: obtenerFechaVencimientoSugerida(),
+    fecha_inicio_pagos: obtenerFechaHoyIso(),
     modalidad_pago: "ambas", // 'contado' | 'partes' | 'ambas'
     tiene_inicial: true,
     porcentaje_inicial: "40",
@@ -270,8 +341,65 @@ export default function PanelGestionPresupuestos({
     };
   }, []);
 
-  const iniciarElaboracionDesdeRequerimiento = async (reqItem) => {
+  const cargarPresupuestoEnFormulario = (preExistente, reqItem = null) => {
+    const pp = preExistente.plan_pago || {};
     setRequerimientoSeleccionado(reqItem);
+    setPresupuestoEditandoId(preExistente.id);
+    setFormPresupuesto({
+      cliente_nombre: preExistente.cliente_nombre || reqItem?.nombre || "",
+      cliente_email: preExistente.cliente_email || reqItem?.email || "",
+      empresa: preExistente.empresa || reqItem?.empresa || "",
+      telefono: preExistente.cliente_telefono || reqItem?.telefono || "",
+      titulo: preExistente.titulo || "",
+      alcance: preExistente.alcance || "",
+      monto_total_usd: String(preExistente.monto_total_usd || ""),
+      fecha_vencimiento: preExistente.fecha_vencimiento
+        ? String(preExistente.fecha_vencimiento).slice(0, 10)
+        : obtenerFechaVencimientoSugerida(),
+      fecha_inicio_pagos: pp.fecha_inicio_pagos || obtenerFechaHoyIso(),
+      modalidad_pago: pp.modalidad || "ambas",
+      tiene_inicial:
+        pp.tiene_inicial !== undefined ? Boolean(pp.tiene_inicial) : true,
+      porcentaje_inicial: String(
+        pp.porcentaje_inicial !== undefined ? pp.porcentaje_inicial : 40
+      ),
+      numero_cuotas: String(pp.numero_cuotas || 3),
+      periodicidad: pp.periodicidad || "Quincenal (cada 15 días)",
+      con_intereses: Boolean(pp.con_intereses),
+      porcentaje_interes: String(pp.porcentaje_interes || 5),
+      tipo_interes: pp.tipo_interes || "sobre_saldo",
+      porcentaje_mora: String(pp.porcentaje_mora || 5),
+      dias_gracia_mora: String(pp.dias_gracia_mora || 5),
+      penalizacion_mora:
+        pp.penalizacion_mora ||
+        generarTextoPenalizacion(
+          pp.porcentaje_mora || 5,
+          pp.dias_gracia_mora || 5
+        ),
+    });
+    setMostrarVistaPrevia(false);
+    setPresupuestoParaEnviar(null);
+    setNotificacion({
+      tipo: "exito",
+      texto: `Reescribiendo / actualizando el presupuesto ${preExistente.codigo}. Ajusta las opciones de pago o alcance y presiona "Ver Presupuesto Completado".`,
+    });
+    setPestanaActiva("elaborar");
+  };
+
+  const iniciarElaboracionDesdeRequerimiento = async (reqItem) => {
+    // Si el requerimiento ya tenía un presupuesto generado, lo cargamos para reescribirlo con las nuevas alternativas
+    if (reqItem.presupuesto_id) {
+      const preExistente = datos.presupuestos.find(
+        (p) => p.id === reqItem.presupuesto_id
+      );
+      if (preExistente) {
+        cargarPresupuestoEnFormulario(preExistente, reqItem);
+        return;
+      }
+    }
+
+    setRequerimientoSeleccionado(reqItem);
+    setPresupuestoEditandoId(null);
     const plantillaSugerida =
       PLANTILLAS_ALCANCE[reqItem.rubro] ||
       PLANTILLAS_ALCANCE["Sistema a la Medida"];
@@ -285,6 +413,7 @@ export default function PanelGestionPresupuestos({
       alcance: plantillaSugerida,
       monto_total_usd: "",
       fecha_vencimiento: obtenerFechaVencimientoSugerida(),
+      fecha_inicio_pagos: obtenerFechaHoyIso(),
       modalidad_pago: "ambas",
       tiene_inicial: true,
       porcentaje_inicial: "40",
@@ -297,6 +426,7 @@ export default function PanelGestionPresupuestos({
       dias_gracia_mora: "5",
       penalizacion_mora: generarTextoPenalizacion(5, 5),
     });
+    setMostrarVistaPrevia(false);
     setPresupuestoParaEnviar(null);
     setNotificacion(null);
     setPestanaActiva("elaborar");
@@ -314,8 +444,29 @@ export default function PanelGestionPresupuestos({
     }
   };
 
+  const abrirVistaPreviaPresupuesto = (e) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (
+      !formPresupuesto.cliente_nombre.trim() ||
+      !formPresupuesto.cliente_email.trim() ||
+      !formPresupuesto.titulo.trim() ||
+      !formPresupuesto.alcance.trim() ||
+      !(Number(formPresupuesto.monto_total_usd) > 0)
+    ) {
+      setNotificacion({
+        tipo: "error",
+        texto:
+          "Por favor completa los datos del cliente, el título, el alcance y un monto en USD mayor a 0 para ver el presupuesto completado.",
+      });
+      return;
+    }
+    setNotificacion(null);
+    setMostrarVistaPrevia(true);
+    window.scrollTo({ top: 140, behavior: "smooth" });
+  };
+
   const manejarCrearPresupuesto = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     setGuardandoPresupuesto(true);
     setNotificacion(null);
 
@@ -329,6 +480,7 @@ export default function PanelGestionPresupuestos({
           monto_total_usd: Number(formPresupuesto.monto_total_usd),
           plan_pago: planCalculado,
           requerimiento_id: requerimientoSeleccionado?.id || null,
+          presupuesto_id: presupuestoEditandoId || null,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -338,10 +490,12 @@ export default function PanelGestionPresupuestos({
 
       await recargarDatos();
       setPresupuestoParaEnviar(data);
+      setPresupuestoEditandoId(data.id);
       setNotificacion({
         tipo: "exito",
-        texto: `¡Presupuesto ${data.codigo} generado exitosamente! Ahora puedes enviarlo directamente al cliente desde el panel inferior.`,
+        texto: `¡Presupuesto ${data.codigo} confirmado y guardado! Ahora puedes enviarlo por Correo o WhatsApp al cliente desde el panel superior.`,
       });
+      window.scrollTo({ top: 120, behavior: "smooth" });
     } catch (err) {
       setNotificacion({
         tipo: "error",
@@ -1019,7 +1173,7 @@ export default function PanelGestionPresupuestos({
                                 className="w-full bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold py-3 px-4 rounded-xl transition-colors shadow-md shadow-blue-600/20 cursor-pointer text-center"
                               >
                                 {esCotizado
-                                  ? "Elaborar Nueva Versión →"
+                                  ? "✏️ Reescribir / Nueva Versión →"
                                   : "1. Elaborar Presupuesto →"}
                               </button>
 
@@ -1608,11 +1762,11 @@ export default function PanelGestionPresupuestos({
                                 )}
                               </div>
 
-                              {/* 2. Cantidad de Pagos Parciales y Periodicidad */}
-                              <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              {/* 2. Cantidad de Pagos Parciales, Periodicidad y Fecha de Inicio */}
+                              <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-3 gap-4">
                                 <div>
                                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                                    2. Cantidad de Pagos Parciales (Cuotas)
+                                    2. Cantidad de Cuotas
                                   </label>
                                   <div className="flex items-center gap-2">
                                     <input
@@ -1626,10 +1780,10 @@ export default function PanelGestionPresupuestos({
                                           numero_cuotas: e.target.value,
                                         }))
                                       }
-                                      className="w-20 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-900"
+                                      className="w-16 bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-2 text-sm font-bold text-slate-900"
                                     />
                                     <div className="flex flex-wrap gap-1">
-                                      {["2", "3", "4", "6", "12"].map((n) => (
+                                      {["2", "3", "4", "6"].map((n) => (
                                         <button
                                           key={n}
                                           type="button"
@@ -1639,7 +1793,7 @@ export default function PanelGestionPresupuestos({
                                               numero_cuotas: n,
                                             }))
                                           }
-                                          className={`text-xs font-bold px-2.5 py-1.5 rounded-lg border cursor-pointer ${
+                                          className={`text-xs font-bold px-2 py-1.5 rounded-lg border cursor-pointer ${
                                             String(
                                               formPresupuesto.numero_cuotas
                                             ) === n
@@ -1656,7 +1810,7 @@ export default function PanelGestionPresupuestos({
 
                                 <div>
                                   <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                                    3. Periodicidad de los Pagos Parciales
+                                    3. Periodicidad
                                   </label>
                                   <select
                                     value={formPresupuesto.periodicidad}
@@ -1687,6 +1841,23 @@ export default function PanelGestionPresupuestos({
                                       Por Hitos de Entrega del Proyecto
                                     </option>
                                   </select>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                                    Fecha Base (Inicio / Inicial)
+                                  </label>
+                                  <input
+                                    type="date"
+                                    value={formPresupuesto.fecha_inicio_pagos}
+                                    onChange={(e) =>
+                                      setFormPresupuesto((p) => ({
+                                        ...p,
+                                        fecha_inicio_pagos: e.target.value,
+                                      }))
+                                    }
+                                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-slate-800"
+                                  />
                                 </div>
                               </div>
 
@@ -1840,6 +2011,41 @@ export default function PanelGestionPresupuestos({
                                     </span>
                                   </div>
                                 </div>
+
+                                {/* Tabla rápida de fechas de vencimiento de cada cuota */}
+                                {Array.isArray(resumenPlan.cronograma_cuotas) &&
+                                  resumenPlan.cronograma_cuotas.length > 0 && (
+                                    <div className="pt-2 border-t border-slate-800 space-y-1.5">
+                                      <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block">
+                                        📅 Fechas de Vencimiento Calculadas por
+                                        Cuota:
+                                      </span>
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                        {resumenPlan.cronograma_cuotas.map(
+                                          (c) => (
+                                            <div
+                                              key={c.numero}
+                                              className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 flex items-center justify-between text-xs"
+                                            >
+                                              <span className="text-slate-300 font-semibold">
+                                                Cuota #{c.numero} ·{" "}
+                                                <strong className="text-white">
+                                                  {formatearFechaCorta(
+                                                    c.fecha_vencimiento
+                                                  )}
+                                                </strong>
+                                              </span>
+                                              <span className="font-black text-cyan-300">
+                                                {formatearUsd(
+                                                  c.monto_cuota_usd
+                                                )}
+                                              </span>
+                                            </div>
+                                          )
+                                        )}
+                                      </div>
+                                    </div>
+                                  )}
                               </div>
 
                               {/* 5. Penalizaciones en caso de incumplimiento / mora al vencimiento */}
@@ -1916,18 +2122,324 @@ export default function PanelGestionPresupuestos({
                       );
                     })()}
 
-                    <div className="pt-2 flex items-center justify-end gap-3">
-                      <button
-                        type="submit"
-                        disabled={guardandoPresupuesto}
-                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-bold px-6 py-3.5 rounded-xl transition-colors shadow-md shadow-blue-600/20 cursor-pointer"
-                      >
-                        {guardandoPresupuesto
-                          ? "Generando Presupuesto..."
-                          : "Generar Presupuesto y Continuar al Envío →"}
-                      </button>
+                    <div className="pt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200">
+                      <p className="text-xs text-slate-500">
+                        Primero verifica cómo queda el documento completo con su
+                        cronograma de fechas antes de guardarlo y enviarlo.
+                      </p>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={abrirVistaPreviaPresupuesto}
+                          className="bg-slate-900 hover:bg-blue-700 text-white text-sm font-extrabold px-6 py-3.5 rounded-xl transition-colors shadow-md cursor-pointer flex items-center gap-2"
+                        >
+                          <span>👁️</span>
+                          <span>
+                            Ver Presupuesto Completado (Verificar antes de
+                            Enviar)
+                          </span>
+                        </button>
+                      </div>
                     </div>
                   </form>
+
+                  {/* ========================================================== */}
+                  {/* DOCUMENTO DE VISTA PREVIA DEL PRESUPUESTO COMPLETADO       */}
+                  {/* ========================================================== */}
+                  {mostrarVistaPrevia &&
+                    (() => {
+                      const planPrevio = calcularPlanPago(formPresupuesto);
+                      const tienePartesPrevio =
+                        planPrevio.modalidad === "partes" ||
+                        planPrevio.modalidad === "ambas";
+
+                      return (
+                        <div className="bg-white border-2 border-blue-600 rounded-3xl shadow-xl overflow-hidden space-y-0">
+                          {/* Barra superior de revisión y confirmación */}
+                          <div className="bg-blue-600 text-white px-6 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            <div>
+                              <span className="text-[11px] font-black uppercase tracking-widest bg-white/20 px-2.5 py-0.5 rounded-full">
+                                Vista Previa de Verificación
+                              </span>
+                              <h3 className="text-base font-extrabold mt-1">
+                                Revisa el Presupuesto Completado antes de
+                                Confirmar y Enviar
+                              </h3>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-2 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => setMostrarVistaPrevia(false)}
+                                className="bg-white/15 hover:bg-white/25 text-white text-xs font-bold px-3.5 py-2 rounded-xl cursor-pointer"
+                              >
+                                ✏️ Modificar Datos
+                              </button>
+                              <button
+                                type="button"
+                                disabled={guardandoPresupuesto}
+                                onClick={manejarCrearPresupuesto}
+                                className="bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-black px-4 py-2.5 rounded-xl shadow-md cursor-pointer"
+                              >
+                                {guardandoPresupuesto
+                                  ? "Guardando..."
+                                  : "✅ Estoy Conforme: Confirmar y Habilitar Envío →"}
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Cuerpo del Documento Completado */}
+                          <div className="p-6 sm:p-8 space-y-6">
+                            {/* Encabezado Ejecutivo */}
+                            <div className="bg-slate-900 text-white rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                              <div>
+                                <span className="text-xs font-mono uppercase bg-blue-500/20 text-blue-300 border border-blue-400/30 px-2.5 py-0.5 rounded-md font-bold">
+                                  {presupuestoEditandoId
+                                    ? "ACTUALIZACIÓN DE PRESUPUESTO"
+                                    : "PROPUESTA TÉCNICA Y ECONÓMICA"}
+                                </span>
+                                <h4 className="text-xl font-extrabold mt-2">
+                                  {formPresupuesto.titulo ||
+                                    "Título del Proyecto"}
+                                </h4>
+                                <p className="text-xs text-slate-300 mt-1">
+                                  Preparado para:{" "}
+                                  <strong className="text-white">
+                                    {formPresupuesto.cliente_nombre}
+                                  </strong>
+                                  {formPresupuesto.empresa
+                                    ? ` (${formPresupuesto.empresa})`
+                                    : ""}{" "}
+                                  · {formPresupuesto.cliente_email}
+                                </p>
+                              </div>
+                              <div className="bg-white/10 border border-white/15 rounded-xl p-4 sm:text-right shrink-0">
+                                <span className="text-[11px] uppercase tracking-wider text-blue-200 block">
+                                  Inversión Base Total
+                                </span>
+                                <span className="text-2xl font-black text-white">
+                                  {formatearUsd(
+                                    formPresupuesto.monto_total_usd
+                                  )}{" "}
+                                  USD
+                                </span>
+                                <span className="text-[11px] text-slate-300 block mt-0.5">
+                                  Válido hasta:{" "}
+                                  {formatearFechaCorta(
+                                    formPresupuesto.fecha_vencimiento
+                                  )}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Alcance Técnico */}
+                            <div>
+                              <h5 className="text-xs font-extrabold uppercase tracking-wider text-blue-700 mb-2">
+                                1. Alcance Técnico y Entregables
+                              </h5>
+                              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 text-xs sm:text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">
+                                {formPresupuesto.alcance}
+                              </div>
+                            </div>
+
+                            {/* Plan de Pagos Parciales, Fechas de Vencimiento, Intereses y Penalizaciones */}
+                            {tienePartesPrevio && (
+                              <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-5 sm:p-6 space-y-5">
+                                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200 pb-3">
+                                  <div>
+                                    <h5 className="text-sm font-extrabold text-slate-900">
+                                      2. Plan de Pagos Parciales, Fechas de
+                                      Vencimiento e Intereses
+                                    </h5>
+                                    <p className="text-xs text-slate-600">
+                                      Periodicidad seleccionada:{" "}
+                                      <strong>{planPrevio.periodicidad}</strong>
+                                    </p>
+                                  </div>
+                                  <span className="text-xs font-extrabold bg-slate-900 text-emerald-300 px-3.5 py-1.5 rounded-xl">
+                                    Total con Plan de Pagos:{" "}
+                                    {formatearUsd(
+                                      planPrevio.monto_total_financiado_usd
+                                    )}{" "}
+                                    USD
+                                  </span>
+                                </div>
+
+                                {/* Tarjetas resumen del plan */}
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                                  <div className="bg-white border border-slate-200 rounded-xl p-3">
+                                    <span className="text-[11px] text-slate-500 block">
+                                      Pago Inicial (Anticipo)
+                                    </span>
+                                    <span className="text-sm font-black text-slate-900">
+                                      {planPrevio.tiene_inicial
+                                        ? `${formatearUsd(planPrevio.monto_inicial_usd)} (${planPrevio.porcentaje_inicial}%)`
+                                        : "$0.00 (Sin Inicial)"}
+                                    </span>
+                                    {planPrevio.tiene_inicial && (
+                                      <span className="text-[10px] text-slate-500 block mt-0.5">
+                                        Fecha:{" "}
+                                        {formatearFechaCorta(
+                                          planPrevio.fecha_inicio_pagos
+                                        )}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="bg-white border border-slate-200 rounded-xl p-3">
+                                    <span className="text-[11px] text-slate-500 block">
+                                      Saldo Financiado
+                                    </span>
+                                    <span className="text-sm font-black text-slate-900">
+                                      {formatearUsd(
+                                        planPrevio.saldo_financiar_usd
+                                      )}{" "}
+                                      USD
+                                    </span>
+                                  </div>
+
+                                  <div className="bg-white border border-slate-200 rounded-xl p-3">
+                                    <span className="text-[11px] text-slate-500 block">
+                                      Intereses Aplicados
+                                    </span>
+                                    <span className="text-sm font-black text-slate-900">
+                                      {planPrevio.con_intereses
+                                        ? `${planPrevio.porcentaje_interes}% (${formatearUsd(planPrevio.monto_interes_usd)})`
+                                        : "0% (Sin Intereses)"}
+                                    </span>
+                                  </div>
+
+                                  <div className="bg-white border border-blue-300 rounded-xl p-3">
+                                    <span className="text-[11px] text-blue-700 font-bold block">
+                                      Pagos Parciales (
+                                      {planPrevio.numero_cuotas} cuotas)
+                                    </span>
+                                    <span className="text-sm font-black text-blue-700">
+                                      {formatearUsd(planPrevio.monto_cuota_usd)}{" "}
+                                      c/u
+                                    </span>
+                                  </div>
+                                </div>
+
+                                {/* Tabla detallada de cada cuota con su fecha de vencimiento */}
+                                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                                  <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 text-xs font-extrabold text-slate-700">
+                                    📅 Cronograma Detallado de Pagos y Fechas de
+                                    Vencimiento
+                                  </div>
+                                  <div className="divide-y divide-slate-200 text-xs">
+                                    {planPrevio.tiene_inicial && (
+                                      <div className="px-4 py-3 flex items-center justify-between bg-emerald-50/50">
+                                        <div>
+                                          <span className="font-extrabold text-emerald-900">
+                                            Pago Inicial (Anticipo{" "}
+                                            {planPrevio.porcentaje_inicial}%)
+                                          </span>
+                                          <span className="text-slate-500 ml-2">
+                                            · Al aprobar propuesta (
+                                            {formatearFechaCorta(
+                                              planPrevio.fecha_inicio_pagos
+                                            )}
+                                            )
+                                          </span>
+                                        </div>
+                                        <span className="font-black text-emerald-800">
+                                          {formatearUsd(
+                                            planPrevio.monto_inicial_usd
+                                          )}{" "}
+                                          USD
+                                        </span>
+                                      </div>
+                                    )}
+                                    {planPrevio.cronograma_cuotas.map(
+                                      (cuota) => (
+                                        <div
+                                          key={cuota.numero}
+                                          className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-1"
+                                        >
+                                          <div>
+                                            <span className="font-bold text-slate-900">
+                                              {cuota.concepto}
+                                            </span>
+                                            <span className="text-slate-600 ml-2">
+                                              · Fecha de vencimiento:{" "}
+                                              <strong className="text-blue-700">
+                                                {formatearFechaCorta(
+                                                  cuota.fecha_vencimiento
+                                                )}
+                                              </strong>
+                                            </span>
+                                          </div>
+                                          <div className="sm:text-right">
+                                            {planPrevio.con_intereses && (
+                                              <span className="text-[11px] text-slate-500 mr-2">
+                                                (Capital:{" "}
+                                                {formatearUsd(
+                                                  cuota.capital_usd
+                                                )}{" "}
+                                                + Interés:{" "}
+                                                {formatearUsd(
+                                                  cuota.interes_usd
+                                                )}
+                                                )
+                                              </span>
+                                            )}
+                                            <span className="font-black text-slate-900">
+                                              {formatearUsd(
+                                                cuota.monto_cuota_usd
+                                              )}{" "}
+                                              USD
+                                            </span>
+                                          </div>
+                                        </div>
+                                      )
+                                    )}
+                                  </div>
+                                </div>
+
+                                {/* Penalización por incumplimiento */}
+                                {planPrevio.penalizacion_mora && (
+                                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-950 leading-relaxed">
+                                    <strong className="font-extrabold uppercase block mb-1 text-amber-900">
+                                      ⚠️ Detalle de Penalización en Caso de
+                                      Incumplimiento al Vencimiento:
+                                    </strong>
+                                    {planPrevio.penalizacion_mora}
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Botones finales de decisión sobre la Vista Previa */}
+                            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setMostrarVistaPrevia(false);
+                                  window.scrollTo({
+                                    top: 150,
+                                    behavior: "smooth",
+                                  });
+                                }}
+                                className="bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 text-xs sm:text-sm font-bold px-5 py-3 rounded-xl cursor-pointer"
+                              >
+                                ✏️ Volver para Modificar / Ajustar Datos
+                              </button>
+
+                              <button
+                                type="button"
+                                disabled={guardandoPresupuesto}
+                                onClick={manejarCrearPresupuesto}
+                                className="bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-xs sm:text-sm font-extrabold px-6 py-3.5 rounded-xl shadow-md cursor-pointer"
+                              >
+                                {guardandoPresupuesto
+                                  ? "Guardando Presupuesto..."
+                                  : "✅ Estoy Conforme: Guardar Presupuesto y Habilitar Envío →"}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                 </div>
               </div>
             )}
@@ -2041,6 +2553,14 @@ export default function PanelGestionPresupuestos({
                             👁️ Ver Vista
                           </button>
                         </div>
+
+                        <button
+                          type="button"
+                          onClick={() => cargarPresupuestoEnFormulario(pre)}
+                          className="w-full bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold py-2 px-3 rounded-xl cursor-pointer"
+                        >
+                          ✏️ Modificar / Reescribir Presupuesto
+                        </button>
                       </div>
                     </div>
                   ))}
