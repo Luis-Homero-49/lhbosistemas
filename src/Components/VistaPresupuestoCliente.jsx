@@ -453,6 +453,101 @@ export default function VistaPresupuestoCliente({ tokenInicial, onVolverInicio }
                   </div>
                 </div>
 
+                {/* Modalidades de Pago y Plan de Pago por Partes (si aplica) */}
+                {presupuesto.plan_pago &&
+                  (presupuesto.plan_pago.modalidad === "partes" ||
+                    presupuesto.plan_pago.modalidad === "ambas") && (
+                    <div className="bg-blue-50/60 border border-blue-200 rounded-2xl p-6 sm:p-8 space-y-5">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-blue-200/80 pb-4">
+                        <div>
+                          <span className="inline-block text-[11px] font-extrabold uppercase tracking-wider text-blue-700 bg-blue-100 px-3 py-1 rounded-full mb-1">
+                            Facilidad de Inversión
+                          </span>
+                          <h2 className="text-lg font-extrabold text-slate-900">
+                            💳 Plan de Pago por Partes y Condiciones Financieras
+                          </h2>
+                        </div>
+                        <span className="text-xs font-bold text-blue-800 bg-white border border-blue-200 px-3.5 py-1.5 rounded-xl self-start sm:self-auto">
+                          Periodicidad: {presupuesto.plan_pago.periodicidad}
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div className="bg-white border border-slate-200 rounded-xl p-4">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                            Pago Inicial (Anticipo)
+                          </span>
+                          <p className="text-lg font-black text-slate-900">
+                            {presupuesto.plan_pago.tiene_inicial
+                              ? formatearUsd(
+                                  presupuesto.plan_pago.monto_inicial_usd
+                                )
+                              : "$0.00 USD"}
+                          </p>
+                          <span className="text-xs text-slate-500">
+                            {presupuesto.plan_pago.tiene_inicial
+                              ? `${presupuesto.plan_pago.porcentaje_inicial}% al aprobar el proyecto`
+                              : "Sin pago inicial requerido"}
+                          </span>
+                        </div>
+
+                        <div className="bg-white border border-blue-300 ring-2 ring-blue-500/10 rounded-xl p-4">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-600 block mb-1">
+                            Pagos Parciales ({presupuesto.plan_pago.numero_cuotas}{" "}
+                            cuotas)
+                          </span>
+                          <p className="text-xl font-black text-blue-700">
+                            {formatearUsd(presupuesto.plan_pago.monto_cuota_usd)}{" "}
+                            <span className="text-xs font-bold">c/u</span>
+                          </p>
+                          <span className="text-xs text-slate-600">
+                            Frecuencia: {presupuesto.plan_pago.periodicidad}
+                          </span>
+                        </div>
+
+                        <div className="bg-white border border-slate-200 rounded-xl p-4">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+                            Intereses de Financiamiento
+                          </span>
+                          <p className="text-lg font-black text-slate-900">
+                            {presupuesto.plan_pago.con_intereses
+                              ? `${presupuesto.plan_pago.porcentaje_interes}% (${formatearUsd(presupuesto.plan_pago.monto_interes_usd)})`
+                              : "0% (Sin Intereses)"}
+                          </p>
+                          <span className="text-xs text-slate-500">
+                            {presupuesto.plan_pago.con_intereses
+                              ? "Incluido en el monto de cada cuota"
+                              : "Financiamiento directo sin recargo"}
+                          </span>
+                        </div>
+
+                        <div className="bg-slate-900 text-white rounded-xl p-4">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-blue-300 block mb-1">
+                            Total Plan por Partes
+                          </span>
+                          <p className="text-lg font-black text-emerald-300">
+                            {formatearUsd(
+                              presupuesto.plan_pago.monto_total_financiado_usd
+                            )}{" "}
+                            USD
+                          </p>
+                          <span className="text-xs text-slate-300">
+                            Hasta su total cancelación
+                          </span>
+                        </div>
+                      </div>
+
+                      {presupuesto.plan_pago.penalizacion_mora && (
+                        <div className="bg-amber-50/90 border border-amber-200/90 rounded-xl p-4 text-xs text-amber-950 leading-relaxed">
+                          <strong className="font-extrabold uppercase tracking-wider block mb-1 text-amber-900">
+                            ⚠️ Cláusula de Vencimiento y Penalización por Mora:
+                          </strong>
+                          {presupuesto.plan_pago.penalizacion_mora}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                 {/* Nota / Coletilla comercial sobre pagos en Bolívares */}
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl px-6 py-4 flex items-start gap-3">
                   <span className="text-blue-600 font-bold text-base mt-0.5">ℹ️</span>

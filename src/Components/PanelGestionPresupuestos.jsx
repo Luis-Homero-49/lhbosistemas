@@ -67,7 +67,76 @@ function limpiarTelefonoWhatsApp(telefono = "") {
   if (soloDigitos.startsWith("0") && soloDigitos.length === 11) {
     return `58${soloDigitos.slice(1)}`;
   }
+  if (soloDigitos.length === 10) {
+    // Si comienza por operadoras móviles de Venezuela (412, 414, 424, 416, 426) agregar 58; de lo contrario 1 (EE.UU./Canadá)
+    if (/^(412|414|424|416|426)/.test(soloDigitos)) {
+      return `58${soloDigitos}`;
+    }
+    return `1${soloDigitos}`;
+  }
   return soloDigitos;
+}
+
+function generarTextoPenalizacion(porcentajeMora = 5, diasGracia = 5) {
+  return `En caso de incumplimiento en la fecha de vencimiento de cualquiera de los pagos parciales acordados, tras un período de gracia de ${diasGracia} días continuos se aplicará un recargo administrativo por mora del ${porcentajeMora}% sobre el monto de la cuota vencida. De mantenerse el retraso, LHBO Sistemas podrá pausar temporalmente el cronograma de desarrollo, soporte técnico o acceso al sistema hasta la total regularización del saldo vencido.`;
+}
+
+function calcularPlanPago(form) {
+  const montoBase = Math.max(0, Number(form.monto_total_usd || 0));
+  const modalidad = form.modalidad_pago || "ambas";
+  const tieneInicial = Boolean(form.tiene_inicial);
+  const pctInicial = tieneInicial
+    ? Math.min(99, Math.max(0, Number(form.porcentaje_inicial || 0)))
+    : 0;
+  const montoInicial = tieneInicial
+    ? Number(((montoBase * pctInicial) / 100).toFixed(2))
+    : 0;
+  const saldoFinanciar = Math.max(
+    0,
+    Number((montoBase - montoInicial).toFixed(2))
+  );
+  const numeroCuotas = Math.max(1, parseInt(form.numero_cuotas, 10) || 1);
+  const periodicidad = form.periodicidad || "Mensual (cada 30 días)";
+  const conIntereses = Boolean(form.con_intereses);
+  const porcentajeInteres = conIntereses
+    ? Math.max(0, Number(form.porcentaje_interes || 0))
+    : 0;
+  const tipoInteres = form.tipo_interes || "sobre_saldo";
+
+  const montoInteres = conIntereses
+    ? tipoInteres === "por_cuota"
+      ? Number(
+          (saldoFinanciar * (porcentajeInteres / 100) * numeroCuotas).toFixed(2)
+        )
+      : Number((saldoFinanciar * (porcentajeInteres / 100)).toFixed(2))
+    : 0;
+
+  const totalEnCuotas = Number((saldoFinanciar + montoInteres).toFixed(2));
+  const montoCuota =
+    numeroCuotas > 0 ? Number((totalEnCuotas / numeroCuotas).toFixed(2)) : 0;
+  const montoTotalFinanciado = Number(
+    (montoInicial + totalEnCuotas).toFixed(2)
+  );
+
+  return {
+    modalidad, // 'contado' | 'partes' | 'ambas'
+    monto_base_usd: Number(montoBase.toFixed(2)),
+    tiene_inicial: tieneInicial,
+    porcentaje_inicial: pctInicial,
+    monto_inicial_usd: montoInicial,
+    saldo_financiar_usd: saldoFinanciar,
+    numero_cuotas: numeroCuotas,
+    periodicidad,
+    con_intereses: conIntereses,
+    porcentaje_interes: porcentajeInteres,
+    tipo_interes: tipoInteres,
+    monto_interes_usd: montoInteres,
+    monto_cuota_usd: montoCuota,
+    monto_total_financiado_usd: montoTotalFinanciado,
+    porcentaje_mora: Number(form.porcentaje_mora || 5),
+    dias_gracia_mora: Number(form.dias_gracia_mora || 5),
+    penalizacion_mora: String(form.penalizacion_mora || "").trim(),
+  };
 }
 
 export default function PanelGestionPresupuestos({
@@ -102,6 +171,17 @@ export default function PanelGestionPresupuestos({
     alcance: "",
     monto_total_usd: "",
     fecha_vencimiento: obtenerFechaVencimientoSugerida(),
+    modalidad_pago: "ambas", // 'contado' | 'partes' | 'ambas'
+    tiene_inicial: true,
+    porcentaje_inicial: "40",
+    numero_cuotas: "3",
+    periodicidad: "Quincenal (cada 15 días)",
+    con_intereses: false,
+    porcentaje_interes: "5",
+    tipo_interes: "sobre_saldo",
+    porcentaje_mora: "5",
+    dias_gracia_mora: "5",
+    penalizacion_mora: generarTextoPenalizacion(5, 5),
   });
   const [guardandoPresupuesto, setGuardandoPresupuesto] = useState(false);
 
@@ -202,6 +282,17 @@ export default function PanelGestionPresupuestos({
       alcance: plantillaSugerida,
       monto_total_usd: "",
       fecha_vencimiento: obtenerFechaVencimientoSugerida(),
+      modalidad_pago: "ambas",
+      tiene_inicial: true,
+      porcentaje_inicial: "40",
+      numero_cuotas: "3",
+      periodicidad: "Quincenal (cada 15 días)",
+      con_intereses: false,
+      porcentaje_interes: "5",
+      tipo_interes: "sobre_saldo",
+      porcentaje_mora: "5",
+      dias_gracia_mora: "5",
+      penalizacion_mora: generarTextoPenalizacion(5, 5),
     });
     setPresupuestoParaEnviar(null);
     setNotificacion(null);
@@ -226,12 +317,14 @@ export default function PanelGestionPresupuestos({
     setNotificacion(null);
 
     try {
+      const planCalculado = calcularPlanPago(formPresupuesto);
       const res = await fetch(`${API_BASE}/api/presupuestos/crear`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           ...formPresupuesto,
           monto_total_usd: Number(formPresupuesto.monto_total_usd),
+          plan_pago: planCalculado,
           requerimiento_id: requerimientoSeleccionado?.id || null,
         }),
       });
@@ -314,15 +407,34 @@ export default function PanelGestionPresupuestos({
   const enviarPresupuestoPorWhatsApp = (presupuesto) => {
     const enlace = construirEnlaceCliente(presupuesto.token_acceso);
     const numero = limpiarTelefonoWhatsApp(presupuesto.cliente_telefono);
+    const pp = presupuesto.plan_pago;
+    const tienePlanPartes =
+      pp && (pp.modalidad === "partes" || pp.modalidad === "ambas");
+
+    const lineasPlan = tienePlanPartes
+      ? [
+          "",
+          `💳 *Opción de Pago por Partes (${pp.periodicidad}):*`,
+          pp.tiene_inicial
+            ? `• *Pago Inicial (${pp.porcentaje_inicial}%):* ${formatearUsd(pp.monto_inicial_usd)} USD`
+            : `• *Pago Inicial:* Sin inicial ($0.00 USD)`,
+          `• *Pagos Parciales:* ${pp.numero_cuotas} cuota(s) de *${formatearUsd(pp.monto_cuota_usd)} USD* c/u (${pp.periodicidad})`,
+          pp.con_intereses
+            ? `• *Financiamiento:* Incluye ${pp.porcentaje_interes}% de interés (${formatearUsd(pp.monto_interes_usd)} USD) — Total financiado: ${formatearUsd(pp.monto_total_financiado_usd)} USD`
+            : `• *Financiamiento:* Sin intereses (0%)`,
+        ]
+      : [];
+
     const texto = [
       `Hola ${presupuesto.cliente_nombre}, le escribimos del equipo de *LHBO Sistemas*.`,
       "",
       `En respuesta a su requerimiento, hemos elaborado su propuesta técnica y económica:`,
       `📄 *Código:* ${presupuesto.codigo}`,
       `📌 *Proyecto:* ${presupuesto.titulo}`,
-      `💵 *Inversión Total:* ${formatearUsd(presupuesto.monto_total_usd)} USD (Si el pago es en Bolívares VES, se calcula a la tasa BCV del día de pago).`,
+      `💵 *Inversión Total Base:* ${formatearUsd(presupuesto.monto_total_usd)} USD (Si el pago es en Bolívares VES, se calcula a la tasa BCV del día de pago).`,
+      ...lineasPlan,
       "",
-      `Puede revisar el alcance detallado, descargar en PDF y aprobar o comentar la propuesta desde su enlace seguro:`,
+      `Puede revisar el alcance detallado, el plan de pagos, descargar en PDF y aprobar o comentar la propuesta desde su enlace seguro:`,
       enlace,
     ].join("\n");
 
@@ -1133,7 +1245,7 @@ export default function PanelGestionPresupuestos({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                          Monto Total Acordado (USD) *
+                          Monto Total Base / De Contado (USD) *
                         </label>
                         <input
                           type="number"
@@ -1147,7 +1259,7 @@ export default function PanelGestionPresupuestos({
                               monto_total_usd: e.target.value,
                             }))
                           }
-                          placeholder="Ej. 950.00"
+                          placeholder="Ej. 650.00"
                           className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm font-bold text-slate-900"
                         />
                         <span className="text-[11px] text-slate-500 block mt-1">
@@ -1173,6 +1285,497 @@ export default function PanelGestionPresupuestos({
                         />
                       </div>
                     </div>
+
+                    {/* ========================================================== */}
+                    {/* CONFIGURACIÓN DE MODALIDAD DE PAGO (CONTADO / POR PARTES)  */}
+                    {/* ========================================================== */}
+                    {(() => {
+                      const resumenPlan = calcularPlanPago(formPresupuesto);
+                      const mostrarPartes =
+                        formPresupuesto.modalidad_pago === "ambas" ||
+                        formPresupuesto.modalidad_pago === "partes";
+
+                      return (
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-5 space-y-5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200 pb-3">
+                            <div>
+                              <h3 className="text-sm font-extrabold text-slate-900">
+                                💳 Modalidad de Pago y Financiamiento por Partes
+                              </h3>
+                              <p className="text-xs text-slate-500">
+                                Configura si deseas ofrecer pago total, pago en
+                                cuotas parciales (con o sin inicial e intereses)
+                                y condiciones de mora.
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Selector de modalidad */}
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                            {[
+                              {
+                                id: "ambas",
+                                titulo: "Pago Total + Pago por Partes",
+                                desc: "Muestra el precio de contado y el plan en cuotas",
+                              },
+                              {
+                                id: "partes",
+                                titulo: "Solo Pago por Partes",
+                                desc: "Presenta el esquema fraccionado en cuotas",
+                              },
+                              {
+                                id: "contado",
+                                titulo: "Solo Pago Total / Único",
+                                desc: "Sin desglose de financiamiento en cuotas",
+                              },
+                            ].map((op) => (
+                              <button
+                                key={op.id}
+                                type="button"
+                                onClick={() =>
+                                  setFormPresupuesto((p) => ({
+                                    ...p,
+                                    modalidad_pago: op.id,
+                                  }))
+                                }
+                                className={`p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                                  formPresupuesto.modalidad_pago === op.id
+                                    ? "bg-blue-600 text-white border-blue-600 shadow-xs"
+                                    : "bg-white text-slate-700 border-slate-300 hover:bg-slate-100"
+                                }`}
+                              >
+                                <span className="block text-xs font-extrabold">
+                                  {op.titulo}
+                                </span>
+                                <span
+                                  className={`block text-[11px] mt-0.5 ${
+                                    formPresupuesto.modalidad_pago === op.id
+                                      ? "text-blue-100"
+                                      : "text-slate-500"
+                                  }`}
+                                >
+                                  {op.desc}
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+
+                          {mostrarPartes && (
+                            <div className="space-y-4 pt-1">
+                              {/* 1. Opción de Pago Inicial (Con o sin inicial) */}
+                              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                                    1. ¿Requiere Pago Inicial (Anticipo)?
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setFormPresupuesto((p) => ({
+                                          ...p,
+                                          tiene_inicial: true,
+                                          porcentaje_inicial:
+                                            Number(p.porcentaje_inicial) > 0
+                                              ? p.porcentaje_inicial
+                                              : "40",
+                                        }))
+                                      }
+                                      className={`text-xs font-bold px-3 py-1.5 rounded-lg border cursor-pointer ${
+                                        formPresupuesto.tiene_inicial
+                                          ? "bg-blue-600 text-white border-blue-600"
+                                          : "bg-slate-100 text-slate-600 border-slate-300"
+                                      }`}
+                                    >
+                                      Sí, con Pago Inicial
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setFormPresupuesto((p) => ({
+                                          ...p,
+                                          tiene_inicial: false,
+                                          porcentaje_inicial: "0",
+                                        }))
+                                      }
+                                      className={`text-xs font-bold px-3 py-1.5 rounded-lg border cursor-pointer ${
+                                        !formPresupuesto.tiene_inicial
+                                          ? "bg-blue-600 text-white border-blue-600"
+                                          : "bg-slate-100 text-slate-600 border-slate-300"
+                                      }`}
+                                    >
+                                      No (Sin Inicial · 100% en cuotas)
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {formPresupuesto.tiene_inicial && (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                    <div>
+                                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                                        Porcentaje de Pago Inicial (%)
+                                      </label>
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          max="95"
+                                          step="1"
+                                          value={
+                                            formPresupuesto.porcentaje_inicial
+                                          }
+                                          onChange={(e) =>
+                                            setFormPresupuesto((p) => ({
+                                              ...p,
+                                              porcentaje_inicial:
+                                                e.target.value,
+                                            }))
+                                          }
+                                          className="w-24 bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold"
+                                        />
+                                        <div className="flex flex-wrap gap-1">
+                                          {["20", "30", "40", "50"].map(
+                                            (pct) => (
+                                              <button
+                                                key={pct}
+                                                type="button"
+                                                onClick={() =>
+                                                  setFormPresupuesto((p) => ({
+                                                    ...p,
+                                                    porcentaje_inicial: pct,
+                                                  }))
+                                                }
+                                                className="text-[11px] font-bold bg-slate-100 hover:bg-blue-50 hover:text-blue-700 px-2 py-1 rounded border border-slate-200 cursor-pointer"
+                                              >
+                                                {pct}%
+                                              </button>
+                                            )
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    <div className="bg-blue-50/70 border border-blue-200 rounded-lg px-3.5 py-2 flex flex-col justify-center">
+                                      <span className="text-[11px] text-slate-500">
+                                        Monto del Pago Inicial calculado:
+                                      </span>
+                                      <span className="text-sm font-black text-blue-700">
+                                        {formatearUsd(
+                                          resumenPlan.monto_inicial_usd
+                                        )}{" "}
+                                        USD
+                                      </span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* 2. Cantidad de Pagos Parciales y Periodicidad */}
+                              <div className="bg-white border border-slate-200 rounded-xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                <div>
+                                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                                    2. Cantidad de Pagos Parciales (Cuotas)
+                                  </label>
+                                  <div className="flex items-center gap-2">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      max="36"
+                                      value={formPresupuesto.numero_cuotas}
+                                      onChange={(e) =>
+                                        setFormPresupuesto((p) => ({
+                                          ...p,
+                                          numero_cuotas: e.target.value,
+                                        }))
+                                      }
+                                      className="w-20 bg-slate-50 border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-900"
+                                    />
+                                    <div className="flex flex-wrap gap-1">
+                                      {["2", "3", "4", "6", "12"].map((n) => (
+                                        <button
+                                          key={n}
+                                          type="button"
+                                          onClick={() =>
+                                            setFormPresupuesto((p) => ({
+                                              ...p,
+                                              numero_cuotas: n,
+                                            }))
+                                          }
+                                          className={`text-xs font-bold px-2.5 py-1.5 rounded-lg border cursor-pointer ${
+                                            String(
+                                              formPresupuesto.numero_cuotas
+                                            ) === n
+                                              ? "bg-blue-600 text-white border-blue-600"
+                                              : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
+                                          }`}
+                                        >
+                                          {n}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div>
+                                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                                    3. Periodicidad de los Pagos Parciales
+                                  </label>
+                                  <select
+                                    value={formPresupuesto.periodicidad}
+                                    onChange={(e) =>
+                                      setFormPresupuesto((p) => ({
+                                        ...p,
+                                        periodicidad: e.target.value,
+                                      }))
+                                    }
+                                    className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3 py-2 text-xs sm:text-sm font-semibold text-slate-800"
+                                  >
+                                    <option value="Semanal (cada 7 días)">
+                                      Semanal (cada 7 días)
+                                    </option>
+                                    <option value="Quincenal (cada 15 días)">
+                                      Quincenal (cada 15 días)
+                                    </option>
+                                    <option value="Mensual (cada 30 días)">
+                                      Mensual (cada 30 días)
+                                    </option>
+                                    <option value="Bimestral (cada 2 meses)">
+                                      Bimestral (cada 2 meses)
+                                    </option>
+                                    <option value="Trimestral (cada 3 meses)">
+                                      Trimestral (cada 3 meses)
+                                    </option>
+                                    <option value="Por Hitos de Entrega">
+                                      Por Hitos de Entrega del Proyecto
+                                    </option>
+                                  </select>
+                                </div>
+                              </div>
+
+                              {/* 4. Configuración de Intereses sobre los Pagos Parciales */}
+                              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <span className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                                    4. ¿Los pagos parciales conllevan intereses?
+                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setFormPresupuesto((p) => ({
+                                          ...p,
+                                          con_intereses: false,
+                                        }))
+                                      }
+                                      className={`text-xs font-bold px-3 py-1.5 rounded-lg border cursor-pointer ${
+                                        !formPresupuesto.con_intereses
+                                          ? "bg-emerald-600 text-white border-emerald-600"
+                                          : "bg-slate-100 text-slate-600 border-slate-300"
+                                      }`}
+                                    >
+                                      Sin Intereses (0%)
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setFormPresupuesto((p) => ({
+                                          ...p,
+                                          con_intereses: true,
+                                        }))
+                                      }
+                                      className={`text-xs font-bold px-3 py-1.5 rounded-lg border cursor-pointer ${
+                                        formPresupuesto.con_intereses
+                                          ? "bg-blue-600 text-white border-blue-600"
+                                          : "bg-slate-100 text-slate-600 border-slate-300"
+                                      }`}
+                                    >
+                                      Sí, aplicar Interés (%)
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {formPresupuesto.con_intereses && (
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                    <div>
+                                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                                        Porcentaje de Interés (%)
+                                      </label>
+                                      <input
+                                        type="number"
+                                        min="0.5"
+                                        max="100"
+                                        step="0.5"
+                                        value={
+                                          formPresupuesto.porcentaje_interes
+                                        }
+                                        onChange={(e) =>
+                                          setFormPresupuesto((p) => ({
+                                            ...p,
+                                            porcentaje_interes: e.target.value,
+                                          }))
+                                        }
+                                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-bold"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                                        Modo de cálculo del interés
+                                      </label>
+                                      <select
+                                        value={formPresupuesto.tipo_interes}
+                                        onChange={(e) =>
+                                          setFormPresupuesto((p) => ({
+                                            ...p,
+                                            tipo_interes: e.target.value,
+                                          }))
+                                        }
+                                        className="w-full bg-slate-50 border border-slate-300 rounded-lg px-3 py-1.5 text-xs font-semibold"
+                                      >
+                                        <option value="sobre_saldo">
+                                          Global sobre el saldo financiado
+                                        </option>
+                                        <option value="por_cuota">
+                                          Por cada período / cuota
+                                        </option>
+                                      </select>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Cuadro de Cálculo Automático de las Cuotas */}
+                              <div className="bg-slate-900 text-white rounded-xl p-4 space-y-3">
+                                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                                  <span className="text-xs font-extrabold uppercase tracking-wider text-blue-300">
+                                    📊 Cálculo Automático del Plan de Pagos
+                                  </span>
+                                  <span className="text-xs text-slate-300">
+                                    Periodicidad:{" "}
+                                    <strong className="text-white">
+                                      {resumenPlan.periodicidad}
+                                    </strong>
+                                  </span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
+                                  <div className="bg-white/5 rounded-lg p-2.5">
+                                    <span className="text-[11px] text-slate-400 block">
+                                      Pago Inicial
+                                    </span>
+                                    <span className="text-sm font-black text-white">
+                                      {resumenPlan.tiene_inicial
+                                        ? `${formatearUsd(resumenPlan.monto_inicial_usd)} (${resumenPlan.porcentaje_inicial}%)`
+                                        : "$0.00 (Sin inicial)"}
+                                    </span>
+                                  </div>
+                                  <div className="bg-white/5 rounded-lg p-2.5">
+                                    <span className="text-[11px] text-slate-400 block">
+                                      Saldo + Intereses
+                                    </span>
+                                    <span className="text-sm font-black text-white">
+                                      {formatearUsd(
+                                        resumenPlan.saldo_financiar_usd +
+                                          resumenPlan.monto_interes_usd
+                                      )}
+                                    </span>
+                                  </div>
+                                  <div className="bg-blue-600/30 border border-blue-400/40 rounded-lg p-2.5">
+                                    <span className="text-[11px] text-blue-200 block">
+                                      Cada Pago Parcial (
+                                      {resumenPlan.numero_cuotas}x)
+                                    </span>
+                                    <span className="text-base font-black text-cyan-300">
+                                      {formatearUsd(
+                                        resumenPlan.monto_cuota_usd
+                                      )}{" "}
+                                      USD
+                                    </span>
+                                  </div>
+                                  <div className="bg-emerald-600/25 border border-emerald-400/40 rounded-lg p-2.5">
+                                    <span className="text-[11px] text-emerald-200 block">
+                                      Total Final c/Plan
+                                    </span>
+                                    <span className="text-sm font-black text-emerald-300">
+                                      {formatearUsd(
+                                        resumenPlan.monto_total_financiado_usd
+                                      )}{" "}
+                                      USD
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* 5. Penalizaciones en caso de incumplimiento / mora al vencimiento */}
+                              <div className="bg-white border border-slate-200 rounded-xl p-4 space-y-3">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <label className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                                    5. Penalización por Incumplimiento / Mora al
+                                    Vencimiento
+                                  </label>
+                                  <div className="flex items-center gap-2 text-xs">
+                                    <span className="text-slate-500">
+                                      Recargo mora (%):
+                                    </span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="50"
+                                      step="0.5"
+                                      value={formPresupuesto.porcentaje_mora}
+                                      onChange={(e) => {
+                                        const nuevoPct = e.target.value;
+                                        setFormPresupuesto((p) => ({
+                                          ...p,
+                                          porcentaje_mora: nuevoPct,
+                                          penalizacion_mora:
+                                            generarTextoPenalizacion(
+                                              nuevoPct || 0,
+                                              p.dias_gracia_mora || 5
+                                            ),
+                                        }));
+                                      }}
+                                      className="w-16 bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold"
+                                    />
+                                    <span className="text-slate-500">
+                                      Días gracia:
+                                    </span>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="30"
+                                      value={formPresupuesto.dias_gracia_mora}
+                                      onChange={(e) => {
+                                        const nuevosDias = e.target.value;
+                                        setFormPresupuesto((p) => ({
+                                          ...p,
+                                          dias_gracia_mora: nuevosDias,
+                                          penalizacion_mora:
+                                            generarTextoPenalizacion(
+                                              p.porcentaje_mora || 5,
+                                              nuevosDias || 0
+                                            ),
+                                        }));
+                                      }}
+                                      className="w-14 bg-slate-50 border border-slate-300 rounded-lg px-2 py-1 text-xs font-bold"
+                                    />
+                                  </div>
+                                </div>
+                                <textarea
+                                  rows="3"
+                                  value={formPresupuesto.penalizacion_mora}
+                                  onChange={(e) =>
+                                    setFormPresupuesto((p) => ({
+                                      ...p,
+                                      penalizacion_mora: e.target.value,
+                                    }))
+                                  }
+                                  placeholder="Detalle las condiciones o recargos en caso de incumplimiento de las fechas de pago..."
+                                  className="w-full bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs text-slate-800 leading-relaxed"
+                                />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div className="pt-2 flex items-center justify-end gap-3">
                       <button

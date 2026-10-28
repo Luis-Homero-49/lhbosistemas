@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS presupuestos (
     titulo VARCHAR(200) NOT NULL,
     alcance TEXT NOT NULL,
     monto_total_usd NUMERIC(12, 2) NOT NULL,
+    plan_pago JSONB,
     token_acceso VARCHAR(64) NOT NULL UNIQUE, -- UUID para URL segura del cliente
     estado VARCHAR(20) DEFAULT 'pendiente' 
         CHECK (estado IN ('pendiente', 'aprobado', 'en_negociacion', 'rechazado')),

@@ -1,6 +1,10 @@
 import { useState } from "react";
 
-export default function Navbar({ onAbrirPresupuesto, onAbrirAdmin }) {
+export default function Navbar({
+  onAbrirPresupuesto,
+  onAbrirAdmin,
+  cantidadPendientes = 0,
+}) {
   const [menuAbierto, setMenuAbierto] = useState(false);
 
   const enlaces = [
@@ -73,11 +77,20 @@ export default function Navbar({ onAbrirPresupuesto, onAbrirAdmin }) {
           <a
             href="/admin"
             onClick={irAAdmin}
-            className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-bold px-3.5 py-2.5 rounded-xl transition-all"
+            className={`inline-flex items-center gap-2 text-xs font-bold px-3.5 py-2.5 rounded-xl transition-all border ${
+              cantidadPendientes > 0
+                ? "bg-amber-50 hover:bg-amber-100 text-amber-950 border-amber-400 shadow-sm ring-2 ring-amber-400/30"
+                : "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300"
+            }`}
             title="Abrir Bandeja de Requerimientos y Elaboración de Presupuestos"
           >
             <span>📋</span>
             <span>Panel Presupuestos</span>
+            {cantidadPendientes > 0 && (
+              <span className="inline-flex items-center gap-1 bg-amber-500 text-slate-950 font-black text-[11px] px-2 py-0.5 rounded-full animate-pulse">
+                🔔 {cantidadPendientes} nuevo{cantidadPendientes > 1 ? "s" : ""}
+              </span>
+            )}
           </a>
           <a
             href="#contacto"
@@ -143,9 +156,14 @@ export default function Navbar({ onAbrirPresupuesto, onAbrirAdmin }) {
             <a
               href="/admin"
               onClick={irAAdmin}
-              className="w-full text-center bg-slate-900 text-white text-sm font-semibold py-2.5 rounded-xl"
+              className="w-full text-center bg-slate-900 text-white text-sm font-semibold py-2.5 rounded-xl flex items-center justify-center gap-2"
             >
-              📋 Panel de Requerimientos y Presupuestos
+              <span>📋 Panel de Requerimientos y Presupuestos</span>
+              {cantidadPendientes > 0 && (
+                <span className="bg-amber-400 text-slate-950 text-xs font-black px-2 py-0.5 rounded-full">
+                  🔔 {cantidadPendientes} nuevo{cantidadPendientes > 1 ? "s" : ""}
+                </span>
+              )}
             </a>
             <a
               href="#contacto"

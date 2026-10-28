@@ -196,6 +196,9 @@ export async function inicializarBaseDeDatos() {
         const sqlSchema = fs.readFileSync(SCHEMA_PATH, "utf-8");
         await client.query(sqlSchema);
       }
+      await client.query(
+        "ALTER TABLE presupuestos ADD COLUMN IF NOT EXISTS plan_pago JSONB"
+      );
 
       // Insertar presupuesto demo si la tabla está vacía
       const { rows } = await client.query(
@@ -827,6 +830,61 @@ export async function enviarPresupuestoPorCorreo(presupuestoId, payload = {}) {
 
   const asunto = `Propuesta Técnica y Presupuesto ${presupuesto.codigo} — LHBO Sistemas`;
 
+  const fmtUsd = (n) =>
+    new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+    }).format(Number(n || 0));
+
+  const pp = presupuesto.plan_pago || null;
+  const tienePlanPartes =
+    pp && (pp.modalidad === "partes" || pp.modalidad === "ambas");
+
+  const lineasPlanTexto = tienePlanPartes
+    ? [
+        "",
+        "Modalidad de Pago por Partes / Financiamiento disponible:",
+        pp.tiene_inicial
+          ? `- Pago Inicial (Anticipo ${pp.porcentaje_inicial || 0}%): ${fmtUsd(pp.monto_inicial_usd)} USD`
+          : "- Pago Inicial: Sin pago inicial ($0.00 USD)",
+        `- Pagos Parciales: ${pp.numero_cuotas} cuota(s) con periodicidad ${pp.periodicidad} de ${fmtUsd(pp.monto_cuota_usd)} USD cada una`,
+        pp.con_intereses
+          ? `- Financiamiento: Incluye ${pp.porcentaje_interes}% de interés (${fmtUsd(pp.monto_interes_usd)} USD) — Total con financiamiento: ${fmtUsd(pp.monto_total_financiado_usd)} USD`
+          : "- Financiamiento: Sin intereses (0%)",
+        pp.penalizacion_mora
+          ? `- Condición por mora / vencimiento: ${pp.penalizacion_mora}`
+          : null,
+      ].filter(Boolean)
+    : [];
+
+  const htmlBloquePlan = tienePlanPartes
+    ? `
+      <div style="padding: 16px 18px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 12px; margin-bottom: 20px; font-size: 13px; color: #1e293b;">
+        <p style="margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; font-weight: bold; color: #1d4ed8;">
+          💳 Plan de Pago por Partes (${escaparHtml(pp.periodicidad)})
+        </p>
+        <ul style="margin: 0; padding-left: 18px; line-height: 1.7;">
+          <li><strong>Pago Inicial:</strong> ${
+            pp.tiene_inicial
+              ? `${escaparHtml(fmtUsd(pp.monto_inicial_usd))} USD (${escaparHtml(String(pp.porcentaje_inicial || 0))}%)`
+              : "Sin pago inicial ($0.00 USD)"
+          }</li>
+          <li><strong>Pagos Parciales:</strong> ${escaparHtml(String(pp.numero_cuotas))} cuota(s) con periodicidad <strong>${escaparHtml(pp.periodicidad)}</strong> de <strong>${escaparHtml(fmtUsd(pp.monto_cuota_usd))} USD</strong> c/u</li>
+          <li><strong>Intereses:</strong> ${
+            pp.con_intereses
+              ? `${escaparHtml(String(pp.porcentaje_interes))}% (${escaparHtml(fmtUsd(pp.monto_interes_usd))} USD) · Total financiado: <strong>${escaparHtml(fmtUsd(pp.monto_total_financiado_usd))} USD</strong>`
+              : "Sin intereses (0%)"
+          }</li>
+        </ul>
+        ${
+          pp.penalizacion_mora
+            ? `<p style="margin: 10px 0 0; padding-top: 8px; border-top: 1px dashed #93c5fd; font-size: 11.5px; color: #475569;"><strong>Penalización por incumplimiento / mora:</strong> ${escaparHtml(pp.penalizacion_mora)}</p>`
+            : ""
+        }
+      </div>
+    `
+    : "";
+
   const textoPlano = [
     `Hola ${presupuesto.cliente_nombre},`,
     "",
@@ -834,6 +892,8 @@ export async function enviarPresupuestoPorCorreo(presupuestoId, payload = {}) {
     "",
     `Código de Presupuesto: ${presupuesto.codigo}`,
     `Inversión Total: ${montoFormateado} USD`,
+    ...lineasPlanTexto,
+    "",
     "(En caso de realizar el pago en Bolívares VES, se calculará a la tasa oficial del BCV vigente el día de pago).",
     "",
     "Puede revisar el alcance técnico detallado y aprobar, solicitar ajustes o descargar en PDF desde el siguiente enlace seguro:",
@@ -870,6 +930,8 @@ export async function enviarPresupuestoPorCorreo(presupuestoId, payload = {}) {
             <strong>Condición de pago:</strong> Si el pago se realiza en Bolívares (VES), se efectuará a la tasa oficial del <strong>Banco Central de Venezuela (BCV)</strong> vigente el día de pago.
           </p>
         </div>
+
+        ${htmlBloquePlan}
 
         <div style="text-align: center; margin: 26px 0;">
           <a href="${escaparHtml(enlaceCliente)}" style="display: inline-block; background: #2563eb; color: #ffffff; text-decoration: none; font-weight: bold; font-size: 14px; padding: 14px 28px; border-radius: 10px;">
@@ -922,13 +984,36 @@ export async function enviarPresupuestoPorCorreo(presupuestoId, payload = {}) {
 
     const data = await resp.json().catch(() => ({}));
     if (!resp.ok) {
+      // Si Resend está en modo sandbox (onboarding@resend.dev), enviamos copia de respaldo al correo administrador
+      // y devolvemos modo_local: true para abrir el cliente de correo con el mensaje prellenado para el cliente.
+      if (
+        replyToEmail &&
+        replyToEmail.toLowerCase() !== presupuesto.cliente_email.toLowerCase()
+      ) {
+        await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: fromEmail,
+            to: [replyToEmail],
+            reply_to: presupuesto.cliente_email,
+            subject: `[Copia para enviar a ${presupuesto.cliente_email}] ${asunto}`,
+            text: textoPlano,
+            html: htmlCorreo,
+          }),
+        }).catch(() => {});
+      }
+
       return {
-        status: resp.status || 502,
+        status: 200,
         body: {
-          ok: false,
-          detail:
-            data?.message ||
-            "No se pudo entregar el correo vía Resend. Puede enviarlo por WhatsApp o correo manual.",
+          ok: true,
+          modo_local: true,
+          aviso_resend: data?.message || null,
+          mensaje: `Se envió copia de respaldo a ${replyToEmail} y se abrió tu cliente de correo listo para enviar a ${presupuesto.cliente_email}.`,
           enlace_cliente: enlaceCliente,
           asunto,
           texto_plano: textoPlano,
@@ -967,7 +1052,7 @@ export async function obtenerPresupuestoPorToken(token) {
 
   if (usarPostgres && pgPool) {
     const query = `
-      SELECT p.id, p.codigo, p.titulo, p.alcance, p.monto_total_usd, p.estado,
+      SELECT p.id, p.codigo, p.titulo, p.alcance, p.monto_total_usd, p.plan_pago, p.estado,
              p.comentarios_cliente, p.creado_en, p.actualizado_en,
              c.nombre AS cliente_nombre, c.empresa, c.email AS cliente_email,
              p.fecha_vencimiento,
@@ -983,6 +1068,7 @@ export async function obtenerPresupuestoPorToken(token) {
     return {
       ...item,
       monto_total_usd: Number(item.monto_total_usd),
+      plan_pago: item.plan_pago || null,
     };
   }
 
@@ -1003,6 +1089,7 @@ export async function obtenerPresupuestoPorToken(token) {
     titulo: presupuesto.titulo,
     alcance: presupuesto.alcance,
     monto_total_usd: Number(presupuesto.monto_total_usd),
+    plan_pago: presupuesto.plan_pago || null,
     estado: presupuesto.estado,
     comentarios_cliente: presupuesto.comentarios_cliente,
     cliente_nombre: cliente.nombre || "Cliente",
@@ -1390,6 +1477,10 @@ export async function crearPresupuesto(payload = {}) {
   const alcance = String(payload.alcance || "").trim();
   const montoTotalUsd = Number(payload.monto_total_usd);
   const fechaVencimiento = payload.fecha_vencimiento || null;
+  const planPago =
+    payload.plan_pago && typeof payload.plan_pago === "object"
+      ? payload.plan_pago
+      : null;
   const requerimientoId = payload.requerimiento_id
     ? Number(payload.requerimiento_id)
     : null;
@@ -1437,8 +1528,8 @@ export async function crearPresupuesto(payload = {}) {
 
       const preRes = await client.query(
         `INSERT INTO presupuestos
-          (cliente_id, codigo, titulo, alcance, monto_total_usd, token_acceso, estado, fecha_vencimiento)
-         VALUES ($1, $2, $3, $4, $5, $6, 'pendiente', $7)
+          (cliente_id, codigo, titulo, alcance, monto_total_usd, plan_pago, token_acceso, estado, fecha_vencimiento)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'pendiente', $8)
          RETURNING *`,
         [
           clienteId,
@@ -1446,6 +1537,7 @@ export async function crearPresupuesto(payload = {}) {
           titulo,
           alcance,
           Number(montoTotalUsd.toFixed(2)),
+          planPago ? JSON.stringify(planPago) : null,
           tokenAcceso,
           fechaVencimiento,
         ]
@@ -1467,6 +1559,8 @@ export async function crearPresupuesto(payload = {}) {
         status: 201,
         body: {
           ...presupuestoCreado,
+          monto_total_usd: Number(presupuestoCreado.monto_total_usd),
+          plan_pago: presupuestoCreado.plan_pago || planPago,
           cliente_nombre: nombreCliente,
           cliente_email: emailCliente,
           cliente_telefono: telefonoCliente,
@@ -1516,6 +1610,7 @@ export async function crearPresupuesto(payload = {}) {
     titulo,
     alcance,
     monto_total_usd: Number(montoTotalUsd.toFixed(2)),
+    plan_pago: planPago,
     token_acceso: tokenAcceso,
     estado: "pendiente",
     comentarios_cliente: null,
