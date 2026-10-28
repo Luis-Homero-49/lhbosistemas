@@ -56,7 +56,11 @@ function formatearFecha(fechaStr) {
   });
 }
 
-export default function VistaPresupuestoCliente({ tokenInicial, onVolverInicio }) {
+export default function VistaPresupuestoCliente({
+  tokenInicial,
+  onVolverInicio,
+  onAbrirAdmin,
+}) {
   const [token, setToken] = useState(tokenInicial || "");
   const [inputToken, setInputToken] = useState(tokenInicial || "");
   const [presupuesto, setPresupuesto] = useState(null);
@@ -244,24 +248,34 @@ export default function VistaPresupuestoCliente({ tokenInicial, onVolverInicio }
             </div>
           </button>
 
-          <div className="flex items-center gap-3 print:hidden">
+          <div className="flex items-center gap-2.5 print:hidden">
             {presupuesto && (
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
+                className="inline-flex items-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold px-3.5 py-2.5 rounded-xl transition-colors cursor-pointer"
               >
                 <span>🖨️</span>
                 <span className="hidden sm:inline">Imprimir / Guardar PDF</span>
               </button>
             )}
+            {onAbrirAdmin && (
+              <button
+                type="button"
+                onClick={onAbrirAdmin}
+                className="inline-flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-3.5 py-2.5 rounded-xl transition-colors cursor-pointer"
+              >
+                <span>📋</span>
+                <span className="hidden sm:inline">Panel de Presupuestos</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onVolverInicio}
-              className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 px-3 py-2 rounded-xl transition-colors cursor-pointer"
+              className="inline-flex items-center gap-1.5 bg-slate-900 hover:bg-blue-700 text-white text-xs font-extrabold px-4 py-2.5 rounded-xl transition-colors shadow-sm cursor-pointer"
             >
-              <span>←</span>
-              <span>Volver al sitio web</span>
+              <span>🏠</span>
+              <span>Volver a la Página Principal</span>
             </button>
           </div>
         </div>
@@ -822,6 +836,33 @@ export default function VistaPresupuestoCliente({ tokenInicial, onVolverInicio }
                     </a>
                   </div>
                 )}
+              </div>
+            </div>
+
+            {/* Barra inferior de retorno para no tener que usar la flecha del navegador */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 print:hidden">
+              <span className="text-xs text-slate-600">
+                ¿Terminó de revisar este presupuesto?
+              </span>
+              <div className="flex flex-wrap items-center gap-2.5">
+                {onAbrirAdmin && (
+                  <button
+                    type="button"
+                    onClick={onAbrirAdmin}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>📋</span>
+                    <span>Volver al Panel de Presupuestos</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onVolverInicio}
+                  className="bg-slate-900 hover:bg-blue-700 text-white text-xs font-extrabold px-5 py-2.5 rounded-xl transition-colors shadow-sm cursor-pointer flex items-center gap-2"
+                >
+                  <span>🏠</span>
+                  <span>Volver a la Página Principal</span>
+                </button>
               </div>
             </div>
           </div>

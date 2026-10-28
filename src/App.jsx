@@ -155,6 +155,7 @@ export default function App() {
       <VistaPresupuestoCliente
         tokenInicial={rutaActiva.token}
         onVolverInicio={volverAlSitioPrincipal}
+        onAbrirAdmin={abrirPanelAdmin}
       />
     );
   }

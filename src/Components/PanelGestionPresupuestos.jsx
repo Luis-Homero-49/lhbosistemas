@@ -902,13 +902,18 @@ export default function PanelGestionPresupuestos({
       {/* Cabecera Ejecutiva del Panel Interno */}
       <header className="bg-slate-900 text-white border-b border-slate-800 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <button
+            type="button"
+            onClick={onVolverInicio}
+            title="Volver a la Página Principal"
+            className="flex items-center gap-3 text-left group cursor-pointer"
+          >
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center text-white font-black text-lg shadow-md">
               LH
             </div>
             <div>
               <div className="flex items-center gap-2.5">
-                <span className="text-xl font-black tracking-tight text-white">
+                <span className="text-xl font-black tracking-tight text-white group-hover:text-blue-300 transition-colors">
                   LHBO<span className="text-blue-400">.</span>
                 </span>
                 <span className="text-xs uppercase tracking-widest bg-blue-500/20 text-blue-300 border border-blue-400/30 px-2.5 py-0.5 rounded-full font-bold">
@@ -920,22 +925,23 @@ export default function PanelGestionPresupuestos({
                 cliente
               </p>
             </div>
-          </div>
+          </button>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={() => setMostrarModalReq(true)}
-              className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
+              className="bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold px-3.5 py-2.5 rounded-xl transition-colors cursor-pointer"
             >
               + Registrar Requerimiento
             </button>
             <button
               type="button"
               onClick={onVolverInicio}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer"
+              className="bg-white hover:bg-slate-100 text-slate-900 text-xs font-extrabold px-4 py-2.5 rounded-xl transition-colors shadow-sm cursor-pointer flex items-center gap-1.5"
             >
-              ← Ver Sitio Web Público
+              <span>🏠</span>
+              <span>Volver a la Página Principal</span>
             </button>
           </div>
         </div>
@@ -1055,7 +1061,7 @@ export default function PanelGestionPresupuestos({
         {/* Banner de notificación de acciones */}
         {notificacion && (
           <div
-            className={`p-4 rounded-2xl border flex items-center justify-between gap-4 text-sm font-medium ${
+            className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-sm font-medium ${
               notificacion.tipo === "error"
                 ? "bg-rose-50 border-rose-200 text-rose-800"
                 : "bg-emerald-50 border-emerald-200 text-emerald-900"
@@ -1065,13 +1071,36 @@ export default function PanelGestionPresupuestos({
               {notificacion.tipo === "error" ? "⚠️ " : "✅ "}
               {notificacion.texto}
             </span>
-            <button
-              type="button"
-              onClick={() => setNotificacion(null)}
-              className="text-xs font-bold underline cursor-pointer shrink-0"
-            >
-              Cerrar
-            </button>
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              {notificacion.tipo !== "error" && (
+                <>
+                  <button
+                    type="button"
+                    onClick={onVolverInicio}
+                    className="bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold px-3.5 py-2 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>🏠</span>
+                    <span>Volver a la Página Principal</span>
+                  </button>
+                  {pestanaActiva !== "requerimientos" && (
+                    <button
+                      type="button"
+                      onClick={() => setPestanaActiva("requerimientos")}
+                      className="bg-white hover:bg-emerald-100 text-emerald-950 border border-emerald-300 text-xs font-bold px-3 py-2 rounded-xl transition-colors cursor-pointer"
+                    >
+                      📋 Ir a Bandeja
+                    </button>
+                  )}
+                </>
+              )}
+              <button
+                type="button"
+                onClick={() => setNotificacion(null)}
+                className="text-xs font-bold underline px-2 py-1 cursor-pointer shrink-0"
+              >
+                Cerrar
+              </button>
+            </div>
           </div>
         )}
 
@@ -1420,6 +1449,31 @@ export default function PanelGestionPresupuestos({
                           <span>👁️</span>
                           <span>Abrir Vista del Cliente</span>
                         </button>
+                      </div>
+
+                      {/* Barra de navegación posterior al envío para regresar fácilmente */}
+                      <div className="border-t border-emerald-800/80 pt-4 mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <span className="text-xs text-emerald-200 font-medium">
+                          ¿Ya enviaste el presupuesto o terminaste la gestión?
+                        </span>
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => setPestanaActiva("requerimientos")}
+                            className="bg-emerald-900/90 hover:bg-emerald-800 text-emerald-100 border border-emerald-700 text-xs font-bold py-2.5 px-3.5 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                          >
+                            <span>📋</span>
+                            <span>Volver a la Bandeja</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={onVolverInicio}
+                            className="bg-white hover:bg-emerald-50 text-emerald-950 text-xs font-extrabold py-2.5 px-4 rounded-xl transition-colors shadow-sm cursor-pointer flex items-center gap-1.5"
+                          >
+                            <span>🏠</span>
+                            <span>Finalizar y Volver a la Página Principal</span>
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )}
@@ -2464,19 +2518,29 @@ export default function PanelGestionPresupuestos({
 
                             {/* Botones finales de decisión sobre la Vista Previa */}
                             <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setMostrarVistaPrevia(false);
-                                  window.scrollTo({
-                                    top: 150,
-                                    behavior: "smooth",
-                                  });
-                                }}
-                                className="bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 text-xs sm:text-sm font-bold px-5 py-3 rounded-xl cursor-pointer"
-                              >
-                                ✏️ Volver para Modificar / Ajustar Datos
-                              </button>
+                              <div className="flex flex-wrap items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMostrarVistaPrevia(false);
+                                    window.scrollTo({
+                                      top: 150,
+                                      behavior: "smooth",
+                                    });
+                                  }}
+                                  className="bg-white border border-slate-300 hover:bg-slate-100 text-slate-800 text-xs sm:text-sm font-bold px-4 py-3 rounded-xl cursor-pointer"
+                                >
+                                  ✏️ Volver para Modificar / Ajustar Datos
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={onVolverInicio}
+                                  className="bg-slate-200/80 hover:bg-slate-300/80 text-slate-800 text-xs sm:text-sm font-bold px-4 py-3 rounded-xl cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <span>🏠</span>
+                                  <span>Página Principal</span>
+                                </button>
+                              </div>
 
                               <button
                                 type="button"
@@ -3185,6 +3249,38 @@ export default function PanelGestionPresupuestos({
                 )}
               </div>
             )}
+
+            {/* Barra de navegación inferior siempre disponible al final de cada sección */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-8">
+              <div className="text-xs text-slate-600">
+                <strong className="text-slate-900">Navegación rápida:</strong>{" "}
+                Puedes cambiar de paso o regresar en cualquier momento a la
+                página principal de <strong>lhbosistemas.com</strong>.
+              </div>
+              <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+                {pestanaActiva !== "requerimientos" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPestanaActiva("requerimientos");
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold px-4 py-2.5 rounded-xl transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <span>📋</span>
+                    <span>Ir a Bandeja de Requerimientos</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={onVolverInicio}
+                  className="bg-slate-900 hover:bg-blue-700 text-white text-xs font-extrabold px-5 py-2.5 rounded-xl transition-colors shadow-sm cursor-pointer flex items-center gap-2"
+                >
+                  <span>🏠</span>
+                  <span>Volver a la Página Principal</span>
+                </button>
+              </div>
+            </div>
           </>
         )}
       </main>
